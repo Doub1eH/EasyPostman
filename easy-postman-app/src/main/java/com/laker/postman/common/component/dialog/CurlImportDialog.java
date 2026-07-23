@@ -1,9 +1,9 @@
 package com.laker.postman.common.component.dialog;
 
+import com.laker.postman.common.component.FallbackAwareRSyntaxTextArea;
 import com.laker.postman.common.component.SyntaxEditorScrollPane;
 import com.laker.postman.common.component.ToolWindowSurfaceStyle;
 import com.laker.postman.common.component.button.ModernButtonFactory;
-import com.laker.postman.util.EditorFontManager;
 import com.laker.postman.util.EditorThemeUtil;
 import com.laker.postman.util.I18nUtil;
 import com.laker.postman.util.MessageKeys;
@@ -73,7 +73,7 @@ public class CurlImportDialog extends JDialog {
     }
 
     private RSyntaxTextArea createCurlEditor() {
-        RSyntaxTextArea editor = new RSyntaxTextArea(20, 80);
+        RSyntaxTextArea editor = new FallbackAwareRSyntaxTextArea(20, 80);
         editor.setSyntaxEditingStyle(SyntaxConstants.SYNTAX_STYLE_UNIX_SHELL);
         editor.setCodeFoldingEnabled(false);
         editor.setEditable(true);
@@ -83,7 +83,6 @@ public class CurlImportDialog extends JDialog {
         editor.setAutoIndentEnabled(true);
         editor.setTabSize(2);
         EditorThemeUtil.loadTheme(editor);
-        EditorFontManager.applyConfiguredEditorFont(editor);
         return editor;
     }
 

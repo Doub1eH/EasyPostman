@@ -31,6 +31,7 @@
 - [✨ Features](#-features)
 - [📦 Download](#-download)
 - [🚀 Quick Start](#-quick-start)
+- [🧪 Collection / Functional CLI](#-collection--functional-cli)
 - [🛠️ Development](#️-development)
 - [🤝 Contributing](#-contributing)
 - [📚 Documentation](#-documentation)
@@ -83,6 +84,7 @@ EasyPostman is a GUI-first tool, and the project value is easier to judge when b
 | **Debug a REST API like Postman** | Create or import a collection, choose an environment, send a request, inspect formatted response bodies, headers, cookies, timing, and the network event log. |
 | **Chain requests with scripts** | Use pre-request scripts and test scripts to read variables, create signatures, extract response data, assert results, and pass values into the next request. |
 | **Share API work through Git** | Keep workspace data local, then use Git workspace operations to commit, pull, push, and review collection/environment changes with your team. |
+| **Run EasyPostman workspaces in CI** | Download the cross-platform JAR or build it from source, then run native workspaces with their collections, environments, scripts, assertions, and uploads. |
 | **Run load tests like JMeter** | Build a performance plan visually, export `plan.json`, run it headlessly, or distribute it with master/worker mode while preserving global user and CSV sharding. |
 
 ---
@@ -101,6 +103,7 @@ EasyPostman is a GUI-first tool, and the project value is easier to judge when b
 - **Multiple body types** - Form Data, x-www-form-urlencoded, JSON, XML, text, and binary payloads
 - **Variables** - Environment, global, request, and iteration data support for repeatable runs
 - **Import/Export** - Postman v2.1 and cURL support, with HAR and OpenAPI/Swagger paths under active development
+- **Headless workspace runs** - Use separate collection and functional commands to run native EasyPostman workspaces from the cross-platform JAR with CI exit codes
 
 ### ⚡ JMeter-style Performance Testing
 - **Scenario design in the GUI** - Thread groups, timers, extractors, assertions, and result views
@@ -208,6 +211,94 @@ java -jar easy-postman-app/target/easy-postman-*.jar
 
 ---
 
+## 🧪 Collection / Functional CLI
+
+Run EasyPostman's native desktop workspaces headlessly without exporting collections or environments.
+
+### Step 1: Get the JAR
+
+Choose either option:
+
+**A. Download the latest JAR:** Open either release page and download `easy-postman-{version}.jar` from the latest `v*` release assets:
+
+- [Latest GitHub Release](https://github.com/lakernote/easy-postman/releases/latest)
+- [Gitee Releases (China mirror)](https://gitee.com/lakernote/easy-postman/releases)
+
+Gitee assets may appear later than GitHub assets. If the latest Gitee release does not yet contain the standalone JAR, use GitHub.
+
+Then verify the commands:
+
+```bash
+java -version  # Java 17+ is required
+java -jar easy-postman-6.x.x.jar collection run --help
+java -jar easy-postman-6.x.x.jar functional run --help
+```
+
+If either command isn't shown, download a newer release or build the current source.
+
+**B. Build from source:**
+
+```bash
+git clone https://github.com/lakernote/easy-postman.git
+cd easy-postman
+mvn -pl easy-postman-app -am -DskipTests clean package
+java -jar easy-postman-app/target/easy-postman-*.jar \
+  collection run --help
+java -jar easy-postman-app/target/easy-postman-*.jar \
+  functional run --help
+```
+
+### Step 2: Run a workspace
+
+`collection run` selects requests by collection/folder. `functional run` selects requests from `functional_config.json`. Both accept a workspace directory directly, so CI does not need desktop registration or GUI state.
+
+From a checked-out Git workspace root:
+
+```bash
+java -jar easy-postman.jar collection run .
+java -jar easy-postman.jar functional run .
+```
+
+You can also pass an absolute workspace path and select a collection and environment:
+
+```bash
+java -jar easy-postman.jar collection run /srv/api-workspace \
+  -c "Basic HTTP Examples" \
+  -e "Dev Env"
+```
+
+The repository example directory is itself a native EasyPostman workspace:
+
+```bash
+java -DCONSOLE_LOG_LEVEL=ERROR \
+  -jar easy-postman-app/target/easy-postman-*.jar \
+  collection run docs/examples/collection-cli \
+  --folder "Smoke" \
+  --bail \
+  --out target/collection-cli-result.json
+```
+
+The functional example is a separate workspace with its own `functional_config.json`:
+
+```bash
+java -DCONSOLE_LOG_LEVEL=ERROR \
+  -jar easy-postman-app/target/easy-postman-*.jar \
+  functional run docs/examples/functional-cli \
+  --bail \
+  --out target/functional-run-result.json
+```
+
+The CLI automatically reads `collections.json` and `environments.json` from the workspace and the app-level `global_variables.json`. Use `-c` and `-e` to select collection and environment names, and `-d` for CSV/JSON iteration data. Relative iteration-data and upload paths resolve from the workspace directory unless `--working-dir` is supplied.
+
+Use `functional run` to reproduce the desktop Functional panel's selected requests and embedded CSV iterations; add `-d` to override those rows with CI-specific CSV/JSON data. A normal workspace can be copied to the runner as an artifact, while a Git workspace can run directly from its checked-out repository directory.
+
+Exit code `0` means success, `1` means a request, script, or assertion failed, and `2` means invalid arguments or workspace data. `--out` writes a JSON report containing the resolved workspace, collections, environment, and request details.
+
+📖 **[Collection CLI guide →](docs/COLLECTION_CLI_zh.md)**
+📖 **[Functional CLI guide →](docs/FUNCTIONAL_CLI_zh.md)**
+
+---
+
 ## 🛠️ Development
 
 ### Common Commands
@@ -247,6 +338,8 @@ Every PR triggers automated checks: build, tests, code quality, and format valid
 |-----|-------------|
 | 📖 [Features](docs/FEATURES.md) | Comprehensive feature documentation |
 | 🚀 [Build Guide](docs/BUILD.md) | Build from source & generate installers |
+| 🧪 [Headless Collection CLI](docs/COLLECTION_CLI_zh.md) | Native EasyPostman workspace runs with variables, scripts, data files, uploads, and CI exit codes (Chinese) |
+| 🧪 [Headless Functional CLI](docs/FUNCTIONAL_CLI_zh.md) | Run selected requests and embedded CSV iterations from `functional_config.json` in CI (Chinese) |
 | ⚡ [Distributed Performance Testing](docs/PERFORMANCE_CLUSTER_LOAD_TEST_zh.md) | GUI remote mode, CLI master/worker, CSV sharding, realtime refresh, and result details |
 | 🔌 [Plugin Architecture](docs/PLUGINS_zh.md) | Plugin modules, development flow, and installation (Chinese) |
 | 🖼️ [Screenshots](docs/SCREENSHOTS.md) | All application screenshots |
@@ -290,16 +383,6 @@ If EasyPostman helps you, consider:
 - 💬 **WeChat group** — add **lakernote** for direct communication
 - 💬 **GitHub Discussions** — [ask questions & share ideas](https://github.com/lakernote/easy-postman/discussions)
 - 📮 **Contact** — WeChat: `lakernote`
-
----
-
-## ⭐ Star History
-
-<div align="center">
-
-[![Star History Chart](https://api.star-history.com/svg?repos=lakernote/easy-postman&type=date&legend=top-left)](https://www.star-history.com/#lakernote/easy-postman&type=date&legend=top-left)
-
-</div>
 
 ---
 

@@ -1,6 +1,7 @@
 package com.laker.postman.common.component;
 
 import org.fife.ui.rsyntaxtextarea.RSyntaxTextArea;
+import org.fife.ui.rsyntaxtextarea.RSyntaxDocument;
 import org.fife.ui.rsyntaxtextarea.Token;
 import org.fife.ui.rsyntaxtextarea.TokenImpl;
 import org.fife.ui.rsyntaxtextarea.TokenTypes;
@@ -11,6 +12,7 @@ import java.awt.*;
 import java.awt.font.FontRenderContext;
 import java.awt.font.GlyphVector;
 import java.awt.geom.AffineTransform;
+import java.awt.geom.Rectangle2D;
 import java.awt.image.BufferedImage;
 import java.awt.image.BufferedImageOp;
 import java.awt.image.ImageObserver;
@@ -22,9 +24,14 @@ import java.util.List;
 import java.util.Map;
 
 import static org.testng.Assert.assertEquals;
+import static org.testng.Assert.assertFalse;
+import static org.testng.Assert.assertNotNull;
 import static org.testng.Assert.assertTrue;
 
-public class ViewportClippedTokenPainterTest {
+/**
+ * Covers the shared editor painter's fallback-font behavior and viewport specialization.
+ */
+public class StandardEditorTokenPainterTest {
 
     @Test
     public void shouldSkipShortTokenThatEndsBeforeViewport() {
@@ -32,7 +39,7 @@ public class ViewportClippedTokenPainterTest {
         Token token = token("abc");
         RecordingGraphics2D graphics = graphicsWithClip(100, 0, 60, 40);
 
-        float nextX = new ViewportClippedTokenPainter()
+        float nextX = new StandardEditorTokenPainter()
                 .paint(token, graphics, 0f, 20f, host, fixedTabExpander(), 100f, true);
 
         assertTrue(nextX > 0f);
@@ -45,7 +52,7 @@ public class ViewportClippedTokenPainterTest {
         Token token = token("abc");
         RecordingGraphics2D graphics = graphicsWithClip(0, 0, 60, 40);
 
-        float nextX = new ViewportClippedTokenPainter()
+        float nextX = new StandardEditorTokenPainter()
                 .paint(token, graphics, 0f, 20f, host, fixedTabExpander(), 0f, true);
 
         assertTrue(nextX > 0f);
@@ -81,6 +88,20 @@ public class ViewportClippedTokenPainterTest {
     }
 
     @Test
+    public void standardPainterShouldNotChunkLongTokens() {
+        RSyntaxTextArea host = new RSyntaxTextArea();
+        Token token = token("a".repeat(2_048));
+        RecordingGraphics2D graphics = graphicsWithClip(0, 0, 120, 40);
+
+        new StandardEditorTokenPainter()
+                .paint(token, graphics, 0f, 20f, host, fixedTabExpander(), 0f, true);
+
+        assertEquals(graphics.drawCharsCalls, 1);
+        assertEquals(graphics.longestDrawCharsLength, 2_048,
+                "Standard painting should remain independent from long-token chunking");
+    }
+
+    @Test
     public void shouldKeepChunkedPaintingWhenSelectionIntersectsLongToken() {
         RSyntaxTextArea host = new RSyntaxTextArea();
         host.setText("a".repeat(600));
@@ -94,6 +115,21 @@ public class ViewportClippedTokenPainterTest {
         assertTrue(graphics.drawCharsCalls > 0);
         assertTrue(graphics.longestDrawCharsLength <= 256,
                 "Selected long-token rendering must stay chunked so horizontal dragging remains responsive");
+    }
+
+    @Test
+    public void viewportChunksShouldNotSplitEmojiSurrogatePairs() {
+        RSyntaxTextArea host = new RSyntaxTextArea();
+        Token token = token("a".repeat(255) + "😀" + "b".repeat(300));
+        RecordingGraphics2D graphics = graphicsWithClip(0, 0, 5_000, 40);
+
+        new ViewportClippedTokenPainter()
+                .paint(token, graphics, 0f, 20f, host, fixedTabExpander(), 0f, true);
+
+        assertTrue(graphics.drawCharsCalls > 1);
+        assertFalse(graphics.splitSurrogatePairAtDraw,
+                "Viewport chunk boundaries must keep an emoji surrogate pair in the same draw call");
+        assertTrue(graphics.longestDrawCharsLength <= 256);
     }
 
     @Test
@@ -116,19 +152,216 @@ public class ViewportClippedTokenPainterTest {
     public void shouldUseConfiguredFallbackFontForUnsupportedCharacters() {
         Font primaryFont = new AsciiOnlyFont(Font.MONOSPACED, Font.PLAIN, 13);
         Font fallbackFont = new Font(Font.SERIF, Font.PLAIN, 13);
-        RSyntaxTextArea host = new RSyntaxTextArea();
+        RSyntaxTextArea host = new FallbackAwareRSyntaxTextArea();
         host.setFont(primaryFont);
-        host.putClientProperty(EditorFontProperties.FALLBACK_FONT_CLIENT_PROPERTY, fallbackFont);
+        host.putClientProperty(EditorFontProperties.FALLBACK_FONT_CLIENT_PROPERTY,
+                new AllGlyphFont(fallbackFont.getName(), fallbackFont.getStyle(), fallbackFont.getSize()));
         Token token = token("ab汉cd");
         RecordingGraphics2D graphics = graphicsWithClip(0, 0, 200, 40);
+
+        new StandardEditorTokenPainter()
+                .paint(token, graphics, 0f, 20f, host, fixedTabExpander(), 0f, true);
+
+        assertEquals(graphics.drawCharsCalls, 1,
+                "A token must use one font so painting and editor layout share identical metrics");
+        assertEquals(graphics.fontsAtDraw.get(0).getFamily(), fallbackFont.getFamily(),
+                "A token unsupported by its syntax font should use the configured fallback font");
+    }
+
+    @Test
+    public void shouldPaintPrimarySupportedTokenAsSingleRunWhenFallbackIsConfigured() {
+        Font primaryFont = new AsciiOnlyFont(Font.MONOSPACED, Font.PLAIN, 13);
+        Font fallbackFont = new Font(Font.SERIF, Font.PLAIN, 13);
+        RSyntaxTextArea host = new FallbackAwareRSyntaxTextArea();
+        host.setFont(primaryFont);
+        host.putClientProperty(EditorFontProperties.FALLBACK_FONT_CLIENT_PROPERTY, fallbackFont);
+        Token token = token("abc123");
+        RecordingGraphics2D graphics = graphicsWithClip(0, 0, 200, 40);
+
+        new StandardEditorTokenPainter()
+                .paint(token, graphics, 0f, 20f, host, fixedTabExpander(), 0f, true);
+
+        assertEquals(graphics.drawCharsCalls, 1,
+                "A token fully covered by the primary font should use the bulk drawing fast path");
+        assertEquals(graphics.fontsAtDraw.get(0), primaryFont);
+    }
+
+    @Test
+    public void standardPainterShouldPreserveNativeTabLines() {
+        RSyntaxTextArea host = new RSyntaxTextArea();
+        host.setPaintTabLines(true);
+        Token token = token("        ");
+        RecordingGraphics2D graphics = graphicsWithClip(0, 0, 200, 40);
+
+        new StandardEditorTokenPainter().paint(
+                token, graphics, host.getMargin().left, 20f, host, fixedTabExpander(), 0f, true);
+
+        assertTrue(graphics.drawLineCalls > 0,
+                "Tokens supported by the primary font must retain RSyntaxTextArea indentation guides");
+    }
+
+    @Test
+    public void viewportPainterShouldPreserveAllNativeTabLinesForLongLeadingWhitespace() {
+        RSyntaxTextArea host = new RSyntaxTextArea();
+        host.setPaintTabLines(true);
+        Token token = token(" ".repeat(600) + "x");
+        RecordingGraphics2D standardGraphics = graphicsWithClip(0, 0, 10_000, 40);
+        RecordingGraphics2D viewportGraphics = graphicsWithClip(0, 0, 10_000, 40);
+
+        new StandardEditorTokenPainter().paint(
+                token, standardGraphics, host.getMargin().left, 20f, host, fixedTabExpander(), 0f, true);
+        new ViewportClippedTokenPainter().paint(
+                token, viewportGraphics, host.getMargin().left, 20f, host, fixedTabExpander(), 0f, true);
+
+        assertEquals(viewportGraphics.drawLineCalls, standardGraphics.drawLineCalls,
+                "Long-token optimization must not truncate native indentation guides");
+    }
+
+    @Test
+    public void standardPainterShouldPreserveNativeVisibleWhitespace() {
+        RSyntaxTextArea host = new RSyntaxTextArea();
+        host.setWhitespaceVisible(true);
+        Token token = token("a b");
+        RecordingGraphics2D graphics = graphicsWithClip(0, 0, 200, 40);
+
+        new StandardEditorTokenPainter()
+                .paint(token, graphics, 0f, 20f, host, fixedTabExpander(), 0f, true);
+
+        assertTrue(graphics.drawLineCalls > 0,
+                "Primary-font tokens must retain native visible-space markers");
+    }
+
+    @Test
+    public void fallbackPaintingShouldPreserveVisibleWhitespace() {
+        Font primaryFont = new AsciiOnlyFont(Font.MONOSPACED, Font.PLAIN, 13);
+        Font fallbackFont = new Font(Font.SERIF, Font.PLAIN, 13);
+        RSyntaxTextArea host = new FallbackAwareRSyntaxTextArea();
+        host.setFont(primaryFont);
+        host.putClientProperty(EditorFontProperties.FALLBACK_FONT_CLIENT_PROPERTY,
+                new AllGlyphFont(fallbackFont.getName(), fallbackFont.getStyle(), fallbackFont.getSize()));
+        host.setWhitespaceVisible(true);
+        Token token = token("汉 字");
+        RecordingGraphics2D graphics = graphicsWithClip(0, 0, 200, 40);
+
+        new StandardEditorTokenPainter()
+                .paint(token, graphics, 0f, 20f, host, fixedTabExpander(), 0f, true);
+
+        assertEquals(graphics.fontsAtDraw.get(0).getFamily(), fallbackFont.getFamily());
+        assertTrue(graphics.drawLineCalls > 0,
+                "Fallback-font tokens must still render visible-space markers");
+    }
+
+    @Test
+    public void fallbackPaintingShouldPreserveTabLines() {
+        Font primaryFont = new AsciiOnlyFont(Font.MONOSPACED, Font.PLAIN, 13);
+        Font fallbackFont = new Font(Font.SERIF, Font.PLAIN, 13);
+        RSyntaxTextArea host = new FallbackAwareRSyntaxTextArea();
+        host.setFont(primaryFont);
+        host.putClientProperty(EditorFontProperties.FALLBACK_FONT_CLIENT_PROPERTY,
+                new AllGlyphFont(fallbackFont.getName(), fallbackFont.getStyle(), fallbackFont.getSize()));
+        host.setPaintTabLines(true);
+        Token token = token("        汉");
+        RecordingGraphics2D graphics = graphicsWithClip(0, 0, 200, 40);
+
+        new StandardEditorTokenPainter().paint(
+                token, graphics, host.getMargin().left, 20f, host, fixedTabExpander(), 0f, true);
+
+        assertEquals(graphics.fontsAtDraw.get(0).getFamily(), fallbackFont.getFamily());
+        assertTrue(graphics.drawLineCalls > 0,
+                "Fallback-font tokens must retain indentation guides for leading whitespace");
+    }
+
+    @Test
+    public void shouldKeepEmojiZwjSequenceInOneFallbackFontRun() {
+        Font primaryFont = new FormattingAwareAsciiFont(Font.MONOSPACED, Font.PLAIN, 13);
+        Font fallbackFont = new AllGlyphFont(Font.SERIF, Font.PLAIN, 13);
+        RSyntaxTextArea host = new FallbackAwareRSyntaxTextArea();
+        host.setFont(primaryFont);
+        host.putClientProperty(EditorFontProperties.FALLBACK_FONT_CLIENT_PROPERTY, fallbackFont);
+        String emojiSequence = "\uD83D\uDC68\uFE0F\u200D\uD83D\uDC69";
+        Token token = token("A" + emojiSequence + "B");
+        RecordingGraphics2D graphics = graphicsWithClip(0, 0, 300, 40);
+
+        new StandardEditorTokenPainter()
+                .paint(token, graphics, 0f, 20f, host, fixedTabExpander(), 0f, true);
+
+        assertEquals(graphics.textsAtDraw, List.of("A" + emojiSequence + "B"),
+                "The whole token should be painted with the resolved fallback font in one native draw");
+        assertEquals(graphics.fontsAtDraw, List.of(fallbackFont));
+    }
+
+    @Test
+    public void fallbackMetricsShouldMatchCaretGeometry() throws Exception {
+        Font primaryFont = new AsciiOnlyFont(Font.MONOSPACED, Font.PLAIN, 13);
+        Font fallbackFont = new AllGlyphFont(Font.SERIF, Font.PLAIN, 13);
+        FallbackAwareRSyntaxTextArea host = new FallbackAwareRSyntaxTextArea();
+        host.setFont(primaryFont);
+        host.putClientProperty(EditorFontProperties.FALLBACK_FONT_CLIENT_PROPERTY, fallbackFont);
+        host.setText("汉".repeat(100));
+        host.setSize(3_000, 80);
+
+        Token token = ((RSyntaxDocument) host.getDocument()).getTokenListForLine(0);
+        Rectangle2D start = host.modelToView2D(0);
+        Rectangle2D end = host.modelToView2D(host.getDocument().getLength());
+        assertNotNull(start);
+        assertNotNull(end);
+
+        float paintedWidth = new StandardEditorTokenPainter()
+                .nextX(token, token.length(), 0f, host, fixedTabExpander());
+        assertEquals(paintedWidth, end.getX() - start.getX(), 0.01,
+                "Painted text and caret placement must use the same fallback metrics");
+    }
+
+    @Test
+    public void lineMetricsShouldAccommodateTheConfiguredFallbackFont() {
+        Font primaryFont = new AsciiOnlyFont(Font.MONOSPACED, Font.PLAIN, 13);
+        Font fallbackFont = new AllGlyphFont(Font.SERIF, Font.PLAIN, 13);
+        FallbackAwareRSyntaxTextArea host = new FallbackAwareRSyntaxTextArea();
+        host.setFont(primaryFont);
+        host.putClientProperty(EditorFontProperties.FALLBACK_FONT_CLIENT_PROPERTY, fallbackFont);
+        FontMetrics fallbackMetrics = host.getFontMetrics(host.getFontForToken(token("汉")));
+
+        assertTrue(host.getLineHeight() >= fallbackMetrics.getHeight());
+        assertTrue(host.getMaxAscent() >= fallbackMetrics.getMaxAscent());
+    }
+
+    @Test
+    public void viewportChunksShouldKeepTheCompleteTokensResolvedFallbackFont() {
+        Font primaryFont = new AsciiOnlyFont(Font.MONOSPACED, Font.PLAIN, 13);
+        Font fallbackFont = new AllGlyphFont(Font.SERIF, Font.PLAIN, 13);
+        FallbackAwareRSyntaxTextArea host = new FallbackAwareRSyntaxTextArea();
+        host.setFont(primaryFont);
+        host.putClientProperty(EditorFontProperties.FALLBACK_FONT_CLIENT_PROPERTY, fallbackFont);
+        Token token = token("a".repeat(600) + "汉");
+        RecordingGraphics2D graphics = graphicsWithClip(0, 0, 10_000, 40);
+
+        float paintedEnd = new ViewportClippedTokenPainter()
+                .paint(token, graphics, 0f, 20f, host, fixedTabExpander(), 0f, true);
+
+        assertTrue(graphics.drawCharsCalls > 1);
+        assertTrue(graphics.fontsAtDraw.stream().allMatch(fallbackFont::equals),
+                "Every slice must inherit the font resolved from the complete source token");
+        assertEquals(paintedEnd, token.getWidth(host, fixedTabExpander(), 0f), 0.01,
+                "Chunked painting and unsliced token layout must end at the same x coordinate");
+    }
+
+    @Test
+    public void viewportChunksShouldNotSplitEmojiZwjSequences() {
+        RSyntaxTextArea host = new RSyntaxTextArea();
+        String emojiSequence = "\uD83D\uDC68\uFE0F\u200D\uD83D\uDC69";
+        Token token = token("a".repeat(253) + emojiSequence + "b".repeat(300));
+        RecordingGraphics2D graphics = graphicsWithClip(0, 0, 5_000, 40);
 
         new ViewportClippedTokenPainter()
                 .paint(token, graphics, 0f, 20f, host, fixedTabExpander(), 0f, true);
 
-        assertTrue(graphics.drawCharsCalls > 1,
-                "Mixed supported and fallback characters should be drawn as separate font runs");
-        assertTrue(graphics.fontsAtDraw.contains(fallbackFont),
-                "Unsupported characters should be drawn with the configured fallback font");
+        assertTrue(graphics.textsAtDraw.stream().anyMatch(text -> text.contains(emojiSequence)),
+                "Viewport chunk boundaries must keep an entire ZWJ emoji sequence together");
+    }
+
+    @Test
+    public void viewportPainterShouldSpecializeStandardPainter() {
+        assertTrue(new ViewportClippedTokenPainter() instanceof StandardEditorTokenPainter);
     }
 
     private Token token(String text) {
@@ -161,6 +394,72 @@ public class ViewportClippedTokenPainterTest {
         public boolean canDisplay(char c) {
             return c < 128;
         }
+
+        @Override
+        public int canDisplayUpTo(char[] text, int start, int limit) {
+            for (int i = start; i < limit; i++) {
+                if (!canDisplay(text[i])) {
+                    return i;
+                }
+            }
+            return -1;
+        }
+    }
+
+    private static final class FormattingAwareAsciiFont extends Font {
+        private FormattingAwareAsciiFont(String name, int style, int size) {
+            super(name, style, size);
+        }
+
+        @Override
+        public boolean canDisplay(int codePoint) {
+            return codePoint >= 0 && codePoint < 128
+                    || codePoint == 0x200D
+                    || codePoint >= 0xFE00 && codePoint <= 0xFE0F;
+        }
+
+        @Override
+        public boolean canDisplay(char c) {
+            return canDisplay((int) c);
+        }
+
+        @Override
+        public int canDisplayUpTo(char[] text, int start, int limit) {
+            for (int i = start; i < limit; ) {
+                int codePoint = Character.codePointAt(text, i, limit);
+                if (!canDisplay(codePoint)) {
+                    return i;
+                }
+                i += Character.charCount(codePoint);
+            }
+            return -1;
+        }
+    }
+
+    private static final class AllGlyphFont extends Font {
+        private AllGlyphFont(String name, int style, int size) {
+            super(name, style, size);
+        }
+
+        @Override
+        public boolean canDisplay(int codePoint) {
+            return Character.isValidCodePoint(codePoint);
+        }
+
+        @Override
+        public boolean canDisplay(char c) {
+            return true;
+        }
+
+        @Override
+        public int canDisplayUpTo(char[] text, int start, int limit) {
+            return -1;
+        }
+
+        @Override
+        public Font deriveFont(int style, float size) {
+            return new AllGlyphFont(getName(), style, Math.round(size));
+        }
     }
 
     private static class RecordingGraphics2D extends Graphics2D {
@@ -168,7 +467,10 @@ public class ViewportClippedTokenPainterTest {
         private int drawCharsCalls;
         private int leftMostClipAtDraw = Integer.MAX_VALUE;
         private int longestDrawCharsLength;
+        private int drawLineCalls;
+        private boolean splitSurrogatePairAtDraw;
         private final List<Font> fontsAtDraw = new ArrayList<>();
+        private final List<String> textsAtDraw = new ArrayList<>();
 
         private RecordingGraphics2D(Graphics2D delegate) {
             this.delegate = delegate;
@@ -178,7 +480,12 @@ public class ViewportClippedTokenPainterTest {
         public void drawChars(char[] data, int offset, int length, int x, int y) {
             drawCharsCalls++;
             longestDrawCharsLength = Math.max(longestDrawCharsLength, length);
+            if (length > 0) {
+                splitSurrogatePairAtDraw |= Character.isLowSurrogate(data[offset])
+                        || Character.isHighSurrogate(data[offset + length - 1]);
+            }
             fontsAtDraw.add(delegate.getFont());
+            textsAtDraw.add(new String(data, offset, length));
             Rectangle clip = delegate.getClipBounds();
             if (clip != null) {
                 leftMostClipAtDraw = Math.min(leftMostClipAtDraw, clip.x);
@@ -443,6 +750,7 @@ public class ViewportClippedTokenPainterTest {
 
         @Override
         public void drawLine(int x1, int y1, int x2, int y2) {
+            drawLineCalls++;
             delegate.drawLine(x1, y1, x2, y2);
         }
 

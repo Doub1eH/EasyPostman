@@ -10,6 +10,7 @@ import com.formdev.flatlaf.FlatClientProperties;
 import com.laker.postman.common.component.EasyComboBox;
 import com.laker.postman.common.component.SearchTextField;
 import com.laker.postman.common.component.SearchableTextArea;
+import com.laker.postman.common.component.FallbackAwareRSyntaxTextArea;
 import com.laker.postman.common.component.AppToolWindowChrome;
 import com.laker.postman.common.component.ToolWindowSidebarHeader;
 import com.laker.postman.common.component.ToolWindowSidebarToolbar;
@@ -1335,7 +1336,7 @@ public class InfluxDbPanel extends JPanel {
 
 
     private RSyntaxTextArea createQueryEditor() {
-        RSyntaxTextArea textArea = new RSyntaxTextArea(10, 40);
+        RSyntaxTextArea textArea = new FallbackAwareRSyntaxTextArea(10, 40);
         textArea.setSyntaxEditingStyle(SyntaxConstants.SYNTAX_STYLE_NONE);
         textArea.setCodeFoldingEnabled(true);
         textArea.setAntiAliasingEnabled(true);
@@ -1347,12 +1348,11 @@ public class InfluxDbPanel extends JPanel {
         textArea.setAnimateBracketMatching(true);
         textArea.setEditable(true);
         EditorThemeUtil.loadTheme(textArea);
-        updateEditorFont(textArea);
         return textArea;
     }
 
     private RSyntaxTextArea createResponseEditor() {
-        RSyntaxTextArea textArea = new RSyntaxTextArea(10, 40);
+        RSyntaxTextArea textArea = new FallbackAwareRSyntaxTextArea(10, 40);
         textArea.setSyntaxEditingStyle(SyntaxConstants.SYNTAX_STYLE_JSON);
         textArea.setCodeFoldingEnabled(true);
         textArea.setAntiAliasingEnabled(true);
@@ -1360,14 +1360,7 @@ public class InfluxDbPanel extends JPanel {
         textArea.setHighlightCurrentLine(false);
         textArea.setEditable(false);
         EditorThemeUtil.loadTheme(textArea);
-        updateEditorFont(textArea);
         return textArea;
-    }
-
-    private void updateEditorFont(RSyntaxTextArea editor) {
-        if (editor != null) {
-            EditorFontManager.applyConfiguredEditorFont(editor);
-        }
     }
 
     private static String defaultString(String value) {

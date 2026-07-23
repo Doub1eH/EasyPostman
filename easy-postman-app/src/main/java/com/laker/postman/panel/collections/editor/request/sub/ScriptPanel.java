@@ -1,5 +1,6 @@
 package com.laker.postman.panel.collections.editor.request.sub;
 
+import com.laker.postman.common.component.FallbackAwareRSyntaxTextArea;
 import com.laker.postman.common.component.SearchableTextArea;
 import com.laker.postman.common.component.ToolWindowSurfaceStyle;
 import com.laker.postman.common.component.button.HelpButton;
@@ -10,7 +11,6 @@ import com.laker.postman.common.component.editor.PostmanJavaScriptTokenMaker;
 import com.laker.postman.common.component.editor.ScriptSnippetManager;
 import com.laker.postman.common.component.tab.IndicatorTabComponent;
 import com.laker.postman.snippet.Snippet;
-import com.laker.postman.util.EditorFontManager;
 import com.laker.postman.util.EditorThemeUtil;
 import com.laker.postman.util.FontsUtil;
 import com.laker.postman.util.I18nUtil;
@@ -57,12 +57,12 @@ public class ScriptPanel extends JPanel {
         setBorder(new EmptyBorder(5, 0, 5, 5));
 
         // 初始化并配置 PreScript 编辑器
-        prescriptArea = new RSyntaxTextArea(6, 40);
+        prescriptArea = new FallbackAwareRSyntaxTextArea(6, 40);
         prescriptAc = configureEditor(prescriptArea);
         SearchableTextArea prescriptSearchableArea = new SearchableTextArea(prescriptArea);
 
         // 初始化并配置 PostScript 编辑器
-        postscriptArea = new RSyntaxTextArea(6, 40);
+        postscriptArea = new FallbackAwareRSyntaxTextArea(6, 40);
         postscriptAc = configureEditor(postscriptArea);
         SearchableTextArea postscriptSearchableArea = new SearchableTextArea(postscriptArea);
 
@@ -214,11 +214,8 @@ public class ScriptPanel extends JPanel {
         area.setPaintTabLines(true);                // 显示缩进参考线
         area.setTabSize(4);                         // Tab = 4 个空格
 
-        // 加载主题（必须在 setFont 之前，否则 theme.apply() 会覆盖字体设置）
+        // 统一加载主题、编辑器字体和缺字回退绘制
         EditorThemeUtil.loadTheme(area);
-
-        // 设置编辑器字体（在 loadTheme 之后，确保不被主题覆盖）
-        EditorFontManager.applyConfiguredEditorFont(area);
 
         return addAutoCompletion(area);
     }

@@ -31,6 +31,7 @@
 - [✨ 功能特性](#-功能特性)
 - [📦 下载](#-下载)
 - [🚀 快速开始](#-快速开始)
+- [🧪 集合 / 功能测试 CLI](#-集合--功能测试-cli)
 - [🛠️ 开发指南](#️-开发指南)
 - [🤝 贡献指南](#-贡献指南)
 - [📚 文档](#-文档)
@@ -83,6 +84,7 @@ EasyPostman 是 GUI 优先的桌面工具，项目价值要同时展示两条主
 | **像 Postman 一样调试 REST API** | 创建或导入集合，选择环境，发送请求，查看格式化响应体、headers、cookies、耗时和网络事件日志。 |
 | **用脚本串联请求** | 使用请求前脚本和测试脚本读取变量、生成签名、提取响应数据、执行断言，并把值传给后续请求。 |
 | **通过 Git 协作接口资产** | 工作区数据保存在本地，通过 Git 工作区提交、拉取、推送和审查集合/环境变更。 |
+| **在 CI 中运行 EasyPostman 工作区** | 下载跨平台 JAR 或从源码构建，直接运行原生工作区中的集合、环境、脚本、断言和文件上传。 |
 | **像 JMeter 一样编排压测** | 在界面中编排压测计划，导出 `plan.json`，再用无头 CLI 或 master/worker 模式执行，同时保持全局用户和 CSV 分片规则。 |
 
 ---
@@ -101,6 +103,7 @@ EasyPostman 是 GUI 优先的桌面工具，项目价值要同时展示两条主
 - **多种请求体** - Form Data、x-www-form-urlencoded、JSON、XML、文本和二进制
 - **变量体系** - 支持环境、全局、请求和迭代数据，让请求和压测可重复执行
 - **导入导出** - 支持 Postman v2.1、cURL，HAR 和 OpenAPI/Swagger 路径持续完善中
+- **工作区无头运行** - 使用独立的集合与功能测试命令执行 EasyPostman 原生工作区，支持 CI 退出码
 
 ### ⚡ JMeter 风格性能测试
 - **GUI 场景编排** - 线程组、定时器、提取器、断言和结果视图
@@ -208,6 +211,94 @@ java -jar easy-postman-app/target/easy-postman-*.jar
 
 ---
 
+## 🧪 集合 / 功能测试 CLI
+
+EasyPostman JAR 可以直接无头运行桌面端的原生工作区，不需要导出集合或环境文件。
+
+### 第一步：获取 JAR
+
+任选一种方式：
+
+**A. 下载最新 JAR**：打开任一发布页，在最新 `v*` 版本的 Assets 中下载 `easy-postman-{版本号}.jar`：
+
+- [GitHub 最新 Release](https://github.com/lakernote/easy-postman/releases/latest)
+- [Gitee Releases（国内镜像）](https://gitee.com/lakernote/easy-postman/releases)
+
+Gitee 附件同步可能稍晚；如果最新版本中暂时没有主 JAR，请使用 GitHub 下载地址。
+
+下载后验证命令：
+
+```bash
+java -version  # 需要 Java 17+
+java -jar easy-postman-6.x.x.jar collection run --help
+java -jar easy-postman-6.x.x.jar functional run --help
+```
+
+如果任一命令未显示，请下载包含该功能的更新版本，或使用源码构建。
+
+**B. 自己构建 JAR**：
+
+```bash
+git clone https://github.com/lakernote/easy-postman.git
+cd easy-postman
+mvn -pl easy-postman-app -am -DskipTests clean package
+java -jar easy-postman-app/target/easy-postman-*.jar \
+  collection run --help
+java -jar easy-postman-app/target/easy-postman-*.jar \
+  functional run --help
+```
+
+### 第二步：运行工作区
+
+`collection run` 按集合/文件夹选择请求，`functional run` 按 `functional_config.json` 选择请求。两者都可以直接接收工作区目录，CI 不依赖桌面端登记信息或 GUI 状态。
+
+Git 工作区 checkout 后，在仓库根目录直接运行：
+
+```bash
+java -jar easy-postman.jar collection run .
+java -jar easy-postman.jar functional run .
+```
+
+也可以指定 workspace 的绝对路径，并选择集合和环境：
+
+```bash
+java -jar easy-postman.jar collection run /srv/api-workspace \
+  -c "Basic HTTP Examples" \
+  -e "Dev Env"
+```
+
+仓库内的示例目录本身就是一个 EasyPostman 工作区：
+
+```bash
+java -DCONSOLE_LOG_LEVEL=ERROR \
+  -jar easy-postman-app/target/easy-postman-*.jar \
+  collection run docs/examples/collection-cli \
+  --folder "Smoke" \
+  --bail \
+  --out target/collection-cli-result.json
+```
+
+功能测试命令使用另一套独立示例 workspace，其中包含自己的 `functional_config.json`：
+
+```bash
+java -DCONSOLE_LOG_LEVEL=ERROR \
+  -jar easy-postman-app/target/easy-postman-*.jar \
+  functional run docs/examples/functional-cli \
+  --bail \
+  --out target/functional-run-result.json
+```
+
+CLI 自动读取工作区的 `collections.json`、`environments.json` 和应用级 `global_variables.json`。`-c`、`-e` 按名称选择集合和环境；`-d` 提供 CSV/JSON 迭代数据。相对迭代数据和上传路径默认以工作区目录为基准，也可用 `--working-dir` 覆盖上传文件目录。
+
+CI 需要复现桌面端功能测试面板时，使用独立的 `functional run` 命令；它读取 `functional_config.json` 中已勾选的请求和内嵌 CSV 多轮数据，同时传 `-d` 可以用 CI 专用 CSV/JSON 覆盖内嵌数据。普通 workspace 通过制品复制到服务器后运行目录，Git workspace 则在 checkout 后直接运行仓库目录。
+
+成功时退出码为 `0`，请求、脚本或断言失败为 `1`，参数或工作区数据错误为 `2`。`--out` 可生成包含工作区、集合、环境和请求明细的 JSON 报告。
+
+📖 **[Collection CLI 完整指南 →](docs/COLLECTION_CLI_zh.md)**
+📖 **[Functional CLI 完整指南 →](docs/FUNCTIONAL_CLI_zh.md)**
+
+---
+
 ## 🛠️ 开发指南
 
 ### 常用命令
@@ -247,6 +338,8 @@ java -jar easy-postman-app/target/easy-postman-*.jar
 |------|------|
 | 📖 [功能详细说明](docs/FEATURES_zh.md) | 全面的功能文档 |
 | 🚀 [构建指南](docs/BUILD_zh.md) | 从源码构建和生成安装包 |
+| 🧪 [集合无头运行 CLI](docs/COLLECTION_CLI_zh.md) | 直接运行 EasyPostman 原生工作区，支持变量、脚本、迭代数据、文件上传和 CI 退出码 |
+| 🧪 [功能测试无头运行 CLI](docs/FUNCTIONAL_CLI_zh.md) | 在 CI 中按 `functional_config.json` 执行已选请求和内嵌 CSV 多轮数据 |
 | ⚡ [集群压测使用指南](docs/PERFORMANCE_CLUSTER_LOAD_TEST_zh.md) | GUI 远程模式、CLI master/worker、CSV 分片、实时刷新和结果明细 |
 | 🔌 [插件架构与安装](docs/PLUGINS_zh.md) | 插件模块、开发流程、在线/离线安装 |
 | 🖼️ [截图展示](docs/SCREENSHOTS_zh.md) | 所有应用截图 |
@@ -290,16 +383,6 @@ java -jar easy-postman-app/target/easy-postman-*.jar
 - 💬 **加入微信群** — 添加 **lakernote** 直接交流
 - 💬 **GitHub 讨论区** — [提问和分享想法](https://github.com/lakernote/easy-postman/discussions)
 - 📮 **联系我** — 微信：`lakernote`
-
----
-
-## ⭐ Star History
-
-<div align="center">
-
-[![Star History Chart](https://api.star-history.com/svg?repos=lakernote/easy-postman&type=date&legend=top-left)](https://www.star-history.com/#lakernote/easy-postman&type=date&legend=top-left)
-
-</div>
 
 ---
 

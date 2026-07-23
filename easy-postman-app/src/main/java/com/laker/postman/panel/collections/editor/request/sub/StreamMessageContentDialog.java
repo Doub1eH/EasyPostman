@@ -1,11 +1,10 @@
 package com.laker.postman.panel.collections.editor.request.sub;
 
+import com.laker.postman.common.component.FallbackAwareRSyntaxTextArea;
 import com.laker.postman.common.component.SearchableTextArea;
 import com.laker.postman.common.component.ToolWindowSurfaceStyle;
-import com.laker.postman.common.component.ViewportClippedTokenPainter;
 import com.laker.postman.common.component.button.ModernButtonFactory;
 import com.laker.postman.common.constants.ModernColors;
-import com.laker.postman.util.EditorFontManager;
 import com.laker.postman.util.EditorThemeUtil;
 import com.laker.postman.util.FontsUtil;
 import com.laker.postman.util.I18nUtil;
@@ -175,15 +174,14 @@ final class StreamMessageContentDialog {
     }
 
     private static RSyntaxTextArea createContentEditor() {
-        RSyntaxTextArea textArea = new RSyntaxTextArea();
+        RSyntaxTextArea textArea = new FallbackAwareRSyntaxTextArea();
         textArea.setEditable(false);
         textArea.setCodeFoldingEnabled(true);
         textArea.setLineWrap(false);
         textArea.setHighlightCurrentLine(false);
         textArea.setShowMatchedBracketPopup(false);
-        textArea.setTokenPainterFactory(ignored -> new ViewportClippedTokenPainter());
         EditorThemeUtil.loadTheme(textArea);
-        EditorFontManager.applyConfiguredEditorFont(textArea);
+        EditorThemeUtil.installViewportClippedTokenPainter(textArea);
         return textArea;
     }
 

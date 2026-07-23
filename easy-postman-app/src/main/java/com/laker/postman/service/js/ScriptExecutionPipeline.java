@@ -1,17 +1,15 @@
 package com.laker.postman.service.js;
 
-import com.laker.postman.model.Environment;
-import com.laker.postman.http.runtime.model.HttpResponse;
-import com.laker.postman.http.runtime.mapper.PreparedRequestMapper;
-import com.laker.postman.http.runtime.model.PreparedRequest;
-import com.laker.postman.request.model.HttpRequestItem;
-
-
 import cn.hutool.core.text.CharSequenceUtil;
-import com.laker.postman.service.js.api.PostmanApiContext;
-import com.laker.postman.service.EnvironmentService;
 import com.laker.postman.http.request.PreparedRequestFactory;
 import com.laker.postman.http.request.PreparedRequestFinalizer;
+import com.laker.postman.http.runtime.mapper.PreparedRequestMapper;
+import com.laker.postman.http.runtime.model.HttpResponse;
+import com.laker.postman.http.runtime.model.PreparedRequest;
+import com.laker.postman.model.Environment;
+import com.laker.postman.request.model.HttpRequestItem;
+import com.laker.postman.service.EnvironmentService;
+import com.laker.postman.service.js.api.PostmanApiContext;
 import com.laker.postman.service.variable.ExecutionContextScope;
 import com.laker.postman.service.variable.ExecutionVariableContext;
 import com.laker.postman.service.variable.RequestExecutionContext;
@@ -77,6 +75,45 @@ public class ScriptExecutionPipeline {
                                                               JsScriptExecutor.OutputCallback outputCallback,
                                                               Supplier<Environment> environmentSupplier,
                                                               RequestExecutionScope requestExecutionScope) {
+        return forRequestExecution(
+                request,
+                sharedExecutionContext,
+                outputCallback,
+                environmentSupplier,
+                requestExecutionScope,
+                PreparedRequestFactory.resolveDeferredAuthorization(item),
+                false
+        );
+    }
+
+    /**
+     * Creates a pipeline for a request whose collection inheritance has already been applied.
+     * Headless collection execution uses this path so it does not depend on the active Swing collection tree.
+     */
+    public static ScriptExecutionPipeline forEffectiveRequestExecution(HttpRequestItem effectiveItem,
+                                                                       PreparedRequest request,
+                                                                       ExecutionVariableContext sharedExecutionContext,
+                                                                       JsScriptExecutor.OutputCallback outputCallback,
+                                                                       Supplier<Environment> environmentSupplier,
+                                                                       RequestExecutionScope requestExecutionScope) {
+        return forRequestExecution(
+                request,
+                sharedExecutionContext,
+                outputCallback,
+                environmentSupplier,
+                requestExecutionScope,
+                PreparedRequestFactory.resolveDeferredAuthorizationWithoutInheritance(effectiveItem),
+                true
+        );
+    }
+
+    private static ScriptExecutionPipeline forRequestExecution(PreparedRequest request,
+                                                               ExecutionVariableContext sharedExecutionContext,
+                                                               JsScriptExecutor.OutputCallback outputCallback,
+                                                               Supplier<Environment> environmentSupplier,
+                                                               RequestExecutionScope requestExecutionScope,
+                                                               PreparedRequestMapper.DeferredAuthorization deferredAuthorization,
+                                                               boolean includeIterationDataInPmVariables) {
         return ScriptExecutionPipeline.builder()
                 .request(request)
                 .preScript(request.prescript)
@@ -85,7 +122,8 @@ public class ScriptExecutionPipeline {
                 .requestExecutionScope(requestExecutionScope != null
                         ? requestExecutionScope
                         : RequestExecutionContext.captureCurrentScope())
-                .deferredAuthorization(PreparedRequestFactory.resolveDeferredAuthorization(item))
+                .deferredAuthorization(deferredAuthorization)
+                .includeIterationDataInPmVariables(includeIterationDataInPmVariables)
                 .outputCallback(outputCallback)
                 .environmentSupplier(environmentSupplier)
                 .build();
@@ -139,6 +177,12 @@ public class ScriptExecutionPipeline {
     private final RequestExecutionScope requestExecutionScope;
 
     /**
+     * Opt-in Postman runner lookup semantics for headless collection execution.
+     * Existing Functional and Performance pipeline builders keep the default false value.
+     */
+    private final boolean includeIterationDataInPmVariables;
+
+    /**
      * 可选的共享上下文。Functional / Performance 这类“同一轮多请求”
      * 场景会显式传入它，避免再依赖线程残留来共享 pm.variables。
      */
@@ -158,6 +202,18 @@ public class ScriptExecutionPipeline {
      * @return 执行结果
      */
     public ScriptExecutionResult executePreScript() {
+        return executePreScript(false);
+    }
+
+    /**
+     * Executes a pre-request script and preserves pm.test results for collection runners.
+     * The existing executePreScript method keeps its historical result behavior.
+     */
+    public ScriptExecutionResult executePreScriptWithTests() {
+        return executePreScript(true);
+    }
+
+    private ScriptExecutionResult executePreScript(boolean captureTestResults) {
         return withExecutionContext(() -> {
             if (CharSequenceUtil.isBlank(preScript)) {
                 return ScriptExecutionResult.success();
@@ -181,12 +237,16 @@ public class ScriptExecutionPipeline {
                         .build();
 
                 executeScript(context);
-                return ScriptExecutionResult.success();
+                return captureTestResults && pm != null && pm.testResults != null
+                        ? ScriptExecutionResult.success(pm.testResults)
+                        : ScriptExecutionResult.success();
 
             } catch (ScriptExecutionException ex) {
                 log.error("Pre-script execution failed: {}", ex.getMessage(), ex);
                 appendScriptOutput("[PreScript Error]\n" + ex.getMessage(), JsScriptExecutor.ConsoleType.ERROR);
-                return ScriptExecutionResult.failure(ex.getMessage(), ex);
+                return captureTestResults && pm != null && pm.testResults != null
+                        ? ScriptExecutionResult.failure(ex.getMessage(), ex, pm.testResults)
+                        : ScriptExecutionResult.failure(ex.getMessage(), ex);
             }
         });
     }
@@ -430,7 +490,10 @@ public class ScriptExecutionPipeline {
 
     private PostmanApiContext createPostmanApiContext(Environment activeEnv) {
         if (environmentSupplier != null) {
-            return PostmanApiContext.scoped(activeEnv, RunScopedVariableContext.currentGlobals());
+            Environment scopedGlobals = RunScopedVariableContext.currentGlobals();
+            return includeIterationDataInPmVariables
+                    ? PostmanApiContext.scopedWithIterationData(activeEnv, scopedGlobals)
+                    : PostmanApiContext.scoped(activeEnv, scopedGlobals);
         }
         return new PostmanApiContext(activeEnv);
     }

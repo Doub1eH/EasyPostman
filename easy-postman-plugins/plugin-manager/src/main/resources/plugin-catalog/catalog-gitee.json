@@ -1,6 +1,6 @@
 {
   "name": "EasyPostman Official Plugin Catalog (Gitee)",
-  "generatedAt": "2026-07-05T12:53:19Z",
+  "generatedAt": "2026-07-21T00:39:17Z",
   "plugins": [
     {
       "id": "plugin-capture",
@@ -8,6 +8,14 @@
       "description": "HTTP capture toolbox panel with a local explicit proxy.",
       "homepage": "https://gitee.com/lakernote/easy-postman",
       "releases": [
+        {
+          "version": "6.0.13",
+          "downloadUrl": "https://gitee.com/lakernote/easy-postman/releases/download/plugin-capture-v6.0.13/easy-postman-6.0.13-plugin-capture.jar",
+          "sha256": "2181b371fb5808e5599aec0496e83f67a87c43671c748ab0754f27db448f79d0",
+          "minAppVersion": "6.0.14",
+          "minPlatformVersion": "4.0.0",
+          "maxPlatformVersion": "4.0.0"
+        },
         {
           "version": "6.0.12",
           "downloadUrl": "https://gitee.com/lakernote/easy-postman/releases/download/plugin-capture-v6.0.12/easy-postman-6.0.12-plugin-capture.jar",
@@ -75,7 +83,7 @@
         {
           "version": "6.0.8",
           "downloadUrl": "https://gitee.com/lakernote/easy-postman/releases/download/plugin-client-cert-v6.0.8/easy-postman-6.0.8-plugin-client-cert.jar",
-          "sha256": "b103e57d855c54f0dd7ea62d633c05734baf1bd9e3e7b4ef5bde31b94c40e03e",
+          "sha256": "ebd2efd34002e6efb53e1a0f8c911a7fea0eaaae708495d7530aceeecc207fe4",
           "minAppVersion": "6.0.7",
           "minPlatformVersion": "4.0.0",
           "maxPlatformVersion": "4.0.0"
@@ -112,6 +120,14 @@
       "description": "Java decompiler toolbox panel powered by CFR.",
       "homepage": "https://gitee.com/lakernote/easy-postman",
       "releases": [
+        {
+          "version": "6.0.9",
+          "downloadUrl": "https://gitee.com/lakernote/easy-postman/releases/download/plugin-decompiler-v6.0.9/easy-postman-6.0.9-plugin-decompiler.jar",
+          "sha256": "d94edf997277e6d80718c2422cd02ecbef1b1ce054e8e23d1a7b181028853a9f",
+          "minAppVersion": "6.0.14",
+          "minPlatformVersion": "4.0.0",
+          "maxPlatformVersion": "4.0.0"
+        },
         {
           "version": "6.0.8",
           "downloadUrl": "https://gitee.com/lakernote/easy-postman/releases/download/plugin-decompiler-v6.0.8/easy-postman-6.0.8-plugin-decompiler.jar",
@@ -152,6 +168,14 @@
       "description": "Kafka toolbox panel, pm.plugin(\"kafka\") script API, completions and snippets.",
       "homepage": "https://gitee.com/lakernote/easy-postman",
       "releases": [
+        {
+          "version": "6.0.9",
+          "downloadUrl": "https://gitee.com/lakernote/easy-postman/releases/download/plugin-kafka-v6.0.9/easy-postman-6.0.9-plugin-kafka.jar",
+          "sha256": "f810c12eccf7c56bd9cbe293008a7b2ee955928bd2ed34081c03020f111d981a",
+          "minAppVersion": "6.0.14",
+          "minPlatformVersion": "4.0.0",
+          "maxPlatformVersion": "4.0.0"
+        },
         {
           "version": "6.0.8",
           "downloadUrl": "https://gitee.com/lakernote/easy-postman/releases/download/plugin-kafka-v6.0.8/easy-postman-6.0.8-plugin-kafka.jar",
@@ -208,6 +232,14 @@
       "description": "Redis toolbox panel, pm.plugin(\"redis\") script API, completions and snippets.",
       "homepage": "https://gitee.com/lakernote/easy-postman",
       "releases": [
+        {
+          "version": "6.0.9",
+          "downloadUrl": "https://gitee.com/lakernote/easy-postman/releases/download/plugin-redis-v6.0.9/easy-postman-6.0.9-plugin-redis.jar",
+          "sha256": "a1f32628b3cf0530a1cd6034149a762cb8ff2024e9e629dca485811b777e52e6",
+          "minAppVersion": "6.0.14",
+          "minPlatformVersion": "4.0.0",
+          "maxPlatformVersion": "4.0.0"
+        },
         {
           "version": "6.0.8",
           "downloadUrl": "https://gitee.com/lakernote/easy-postman/releases/download/plugin-redis-v6.0.8/easy-postman-6.0.8-plugin-redis.jar",

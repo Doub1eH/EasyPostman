@@ -6,9 +6,9 @@ import cn.hutool.core.util.XmlUtil;
 import com.formdev.flatlaf.util.SystemFileChooser;
 import com.laker.postman.common.UiSingletonFactory;
 import com.laker.postman.common.component.EasyComboBox;
+import com.laker.postman.common.component.FallbackAwareRSyntaxTextArea;
 import com.laker.postman.common.component.SearchableTextArea;
 import com.laker.postman.common.component.ToolWindowSurfaceStyle;
-import com.laker.postman.common.component.ViewportClippedTokenPainter;
 import com.laker.postman.common.component.button.*;
 import com.laker.postman.common.constants.ModernColors;
 import com.laker.postman.frame.MainFrame;
@@ -79,20 +79,16 @@ public class ResponseBodyPanel extends JPanel {
         ToolWindowSurfaceStyle.applyCard(this);
         // 设置边距
         setBorder(BorderFactory.createEmptyBorder(5, 5, 5, 5));
-        responseBodyPane = new RSyntaxTextArea();
+        responseBodyPane = new FallbackAwareRSyntaxTextArea();
         responseBodyPane.setEditable(false);
         responseBodyPane.setCodeFoldingEnabled(true);
         responseBodyPane.setLineWrap(false); // 禁用自动换行以提升大文本性能
         responseBodyPane.setHighlightCurrentLine(false); // 关闭选中行高亮
         // 关闭括号匹配的小浮层提示，避免响应体中长 JSON 滚动查看时遮挡内容
         responseBodyPane.setShowMatchedBracketPopup(false);
-        responseBodyPane.setTokenPainterFactory(textArea -> new ViewportClippedTokenPainter());
-
-        // 加载编辑器主题 - 支持亮色和暗色主题自适应（必须在 setFont 之前，否则主题会覆盖字体）
+        // 统一加载主题、编辑器字体和缺字回退绘制
         EditorThemeUtil.loadTheme(responseBodyPane);
-
-        // 设置字体 - 使用用户设置的字体大小（必须在主题应用之后，避免被主题覆盖）
-        updateEditorFont();
+        EditorThemeUtil.installViewportClippedTokenPainter(responseBodyPane);
 
         // 使用 SearchableTextArea 包装，禁用替换功能（仅搜索）
         searchableTextArea = new SearchableTextArea(responseBodyPane, false);
@@ -620,14 +616,6 @@ public class ResponseBodyPanel extends JPanel {
         } else {
             sizeWarningLabel.setVisible(false);
         }
-    }
-
-    /**
-     * 更新编辑器字体
-     * 使用独立编辑器字体设置
-     */
-    private void updateEditorFont() {
-        EditorFontManager.applyConfiguredEditorFont(responseBodyPane);
     }
 
 }

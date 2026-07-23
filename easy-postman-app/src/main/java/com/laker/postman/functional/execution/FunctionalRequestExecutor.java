@@ -10,14 +10,21 @@ import com.laker.postman.http.runtime.model.PreparedRequest;
 import com.laker.postman.http.runtime.transport.DefaultHttpTransport;
 import com.laker.postman.http.runtime.transport.HttpExchangeOptions;
 import com.laker.postman.http.runtime.transport.HttpTransport;
+import com.laker.postman.model.Environment;
 import com.laker.postman.request.model.HttpRequestItem;
+import com.laker.postman.script.model.TestResult;
+import com.laker.postman.service.js.JsScriptExecutor;
 import com.laker.postman.service.js.ScriptExecutionPipeline;
 import com.laker.postman.service.js.ScriptExecutionResult;
 import com.laker.postman.service.variable.ExecutionVariableContext;
+import com.laker.postman.service.variable.RequestExecutionScope;
 import lombok.extern.slf4j.Slf4j;
 
+import java.util.ArrayList;
+import java.util.List;
 import java.util.function.BooleanSupplier;
 import java.util.function.Consumer;
+import java.util.function.Supplier;
 
 @Slf4j
 public final class FunctionalRequestExecutor {
@@ -38,24 +45,82 @@ public final class FunctionalRequestExecutor {
     public FunctionalRequestExecutionResult execute(RunnerRowData row,
                                                     ExecutionVariableContext iterationContext,
                                                     BooleanSupplier executionActiveSupplier) {
+        return execute(
+                row.requestItem,
+                iterationContext,
+                executionActiveSupplier,
+                true,
+                false,
+                null,
+                null,
+                null,
+                null
+        );
+    }
+
+    /**
+     * Executes an effective request and lets a headless caller adjust the prepared request after
+     * pre-scripts and variable substitution, but before the HTTP transport reads it.
+     */
+    public FunctionalRequestExecutionResult executeEffective(HttpRequestItem item,
+                                                             ExecutionVariableContext iterationContext,
+                                                             BooleanSupplier executionActiveSupplier,
+                                                             Supplier<Environment> environmentSupplier,
+                                                             RequestExecutionScope requestExecutionScope,
+                                                             JsScriptExecutor.OutputCallback outputCallback,
+                                                             Consumer<PreparedRequest> finalizedRequestConsumer) {
+        return execute(
+                item,
+                iterationContext,
+                executionActiveSupplier,
+                false,
+                true,
+                environmentSupplier,
+                requestExecutionScope,
+                outputCallback,
+                finalizedRequestConsumer
+        );
+    }
+
+    private FunctionalRequestExecutionResult execute(HttpRequestItem item,
+                                                     ExecutionVariableContext iterationContext,
+                                                     BooleanSupplier executionActiveSupplier,
+                                                     boolean applyActiveCollectionInheritance,
+                                                     boolean collectionRunnerSemantics,
+                                                     Supplier<Environment> environmentSupplier,
+                                                     RequestExecutionScope requestExecutionScope,
+                                                     JsScriptExecutor.OutputCallback outputCallback,
+                                                     Consumer<PreparedRequest> finalizedRequestConsumer) {
         if (executionActiveSupplier != null && !executionActiveSupplier.getAsBoolean()) {
             return FunctionalRequestExecutionResult.skipped();
         }
 
         long start = System.currentTimeMillis();
-        HttpRequestItem item = row.requestItem;
-        PreparedRequest request = PreparedRequestFactory.build(item);
+        PreparedRequest request = applyActiveCollectionInheritance
+                ? PreparedRequestFactory.build(item)
+                : PreparedRequestFactory.buildWithoutInheritance(item);
         HttpCaptureProfiles.apply(request, HttpCaptureProfile.FUNCTIONAL_DIAGNOSTIC);
 
-        ScriptExecutionPipeline pipeline = ScriptExecutionPipeline.forRequestExecution(
-                item,
-                request,
-                iterationContext
-        );
+        ScriptExecutionPipeline pipeline = applyActiveCollectionInheritance
+                ? ScriptExecutionPipeline.forRequestExecution(item, request, iterationContext)
+                : ScriptExecutionPipeline.forEffectiveRequestExecution(
+                        item,
+                        request,
+                        iterationContext,
+                        outputCallback,
+                        environmentSupplier,
+                        requestExecutionScope
+                );
 
-        ScriptExecutionResult preResult = pipeline.executePreScript();
+        boolean includePreRequestTests = collectionRunnerSemantics;
+        ScriptExecutionResult preResult = includePreRequestTests
+                ? pipeline.executePreScriptWithTests()
+                : pipeline.executePreScript();
         if (preResult.isSuccess()) {
             pipeline.finalizeRequest();
+            if (finalizedRequestConsumer != null) {
+                finalizedRequestConsumer.accept(request);
+            }
         }
 
         HttpResponse response = null;
@@ -72,7 +137,15 @@ public final class FunctionalRequestExecutor {
                 response = httpTransport.execute(request, HttpExchangeOptions.defaults());
                 status = String.valueOf(response.code);
                 postResult = pipeline.executePostScript(response);
-                if (postResult.hasTestResults()) {
+                if (collectionRunnerSemantics && !postResult.isSuccess()) {
+                    assertion = AssertionResult.FAIL;
+                    errorMessage = postResult.getErrorMessage();
+                } else if (includePreRequestTests
+                        && (preResult.hasTestResults() || postResult.hasTestResults())) {
+                    assertion = preResult.allTestsPassed() && postResult.allTestsPassed()
+                            ? AssertionResult.PASS
+                            : AssertionResult.FAIL;
+                } else if (postResult.hasTestResults()) {
                     assertion = postResult.allTestsPassed() ? AssertionResult.PASS : AssertionResult.FAIL;
                 }
             } catch (Exception ex) {
@@ -94,7 +167,23 @@ public final class FunctionalRequestExecutor {
                 status,
                 errorMessage,
                 assertion,
-                postResult == null ? null : postResult.getTestResults()
+                reportedTests(preResult, postResult, includePreRequestTests)
         );
+    }
+
+    private static List<TestResult> reportedTests(ScriptExecutionResult preResult,
+                                                  ScriptExecutionResult postResult,
+                                                  boolean includePreRequestTests) {
+        if (!includePreRequestTests) {
+            return postResult == null ? null : postResult.getTestResults();
+        }
+        List<TestResult> tests = new ArrayList<>();
+        if (preResult != null && preResult.getTestResults() != null) {
+            tests.addAll(preResult.getTestResults());
+        }
+        if (postResult != null && postResult.getTestResults() != null) {
+            tests.addAll(postResult.getTestResults());
+        }
+        return tests;
     }
 }

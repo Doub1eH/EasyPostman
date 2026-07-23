@@ -1,5 +1,6 @@
 package com.laker.postman.plugin.decompiler;
 
+import com.laker.postman.common.component.FallbackAwareRSyntaxTextArea;
 import com.laker.postman.common.component.notification.NotificationCenter;
 
 import com.formdev.flatlaf.FlatClientProperties;
@@ -292,18 +293,15 @@ public class DecompilerPanel extends JPanel {
         panel.add(headerPanel, BorderLayout.NORTH);
 
         // 创建代码编辑器
-        codeArea = new RSyntaxTextArea();
+        codeArea = new FallbackAwareRSyntaxTextArea();
         codeArea.setSyntaxEditingStyle(SyntaxConstants.SYNTAX_STYLE_JAVA);
         codeArea.setCodeFoldingEnabled(true);
         codeArea.setAntiAliasingEnabled(true);
         codeArea.setEditable(false);
         codeArea.setMargin(new Insets(10, 10, 10, 10));
 
-        // 应用编辑器主题 - 支持亮色/暗色模式自适应（必须在 setFont 之前，否则主题会覆盖字体）
+        // 统一加载主题、编辑器字体和缺字回退绘制
         EditorThemeUtil.loadTheme(codeArea);
-
-        // 设置字体（在 loadTheme 之后，确保不被主题覆盖）
-        codeArea.setFont(FontsUtil.getDefaultFont(Font.PLAIN));
 
         RTextScrollPane scrollPane = new RTextScrollPane(codeArea);
         scrollPane.setFoldIndicatorEnabled(true);

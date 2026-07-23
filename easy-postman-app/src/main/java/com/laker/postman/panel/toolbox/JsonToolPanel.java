@@ -1,8 +1,8 @@
 package com.laker.postman.panel.toolbox;
 
 import cn.hutool.json.JSONUtil;
+import com.laker.postman.common.component.FallbackAwareRSyntaxTextArea;
 import com.laker.postman.common.component.SearchableTextArea;
-import com.laker.postman.common.component.ViewportClippedTokenPainter;
 import com.laker.postman.common.constants.ModernColors;
 import com.laker.postman.util.EditorThemeUtil;
 import com.laker.postman.util.FontsUtil;
@@ -126,7 +126,7 @@ public class JsonToolPanel extends JPanel {
      * 创建配置好的JSON文本编辑区域
      */
     private RSyntaxTextArea createJsonTextArea() {
-        RSyntaxTextArea textArea = new RSyntaxTextArea(10, 40);
+        RSyntaxTextArea textArea = new FallbackAwareRSyntaxTextArea(10, 40);
         textArea.setSyntaxEditingStyle(SyntaxConstants.SYNTAX_STYLE_JSON);
         textArea.setCodeFoldingEnabled(true); // 启用代码折叠
         textArea.setAntiAliasingEnabled(true); // 抗锯齿
@@ -135,8 +135,8 @@ public class JsonToolPanel extends JPanel {
         textArea.setTabsEmulated(true); // 用空格模拟Tab
         textArea.setMarkOccurrences(true); // 标记相同内容
         textArea.setAnimateBracketMatching(true); // 括号匹配动画
-        textArea.setTokenPainterFactory(ignored -> new ViewportClippedTokenPainter());
         EditorThemeUtil.loadTheme(textArea);
+        EditorThemeUtil.installViewportClippedTokenPainter(textArea);
         return textArea;
     }
 

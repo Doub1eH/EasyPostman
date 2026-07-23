@@ -1,5 +1,6 @@
 package com.laker.postman.functional.execution;
 
+import com.laker.postman.functional.model.AssertionResult;
 import com.laker.postman.functional.model.RunnerRowData;
 import com.laker.postman.http.runtime.model.HttpCaptureProfile;
 import com.laker.postman.http.runtime.model.HttpResponse;
@@ -15,8 +16,11 @@ import okhttp3.WebSocketListener;
 import okhttp3.sse.EventSourceListener;
 import org.testng.annotations.Test;
 
+import java.util.LinkedHashMap;
+
 import static org.testng.Assert.assertEquals;
 import static org.testng.Assert.assertFalse;
+import static org.testng.Assert.assertNull;
 import static org.testng.Assert.assertSame;
 import static org.testng.Assert.assertTrue;
 
@@ -45,6 +49,51 @@ public class FunctionalRequestExecutorTest {
         assertFalse(result.getRequest().enableNetworkLog);
     }
 
+    @Test
+    public void shouldKeepExistingFunctionalPostRequestErrorBehavior() {
+        HttpRequestItem item = new HttpRequestItem();
+        item.setName("Broken post script");
+        item.setMethod("GET");
+        item.setUrl("https://example.test/failure");
+        item.setPostscript("throw new Error('post script boom');");
+
+        FunctionalRequestExecutionResult result = new FunctionalRequestExecutor(
+                null,
+                new CapturingTransport()
+        ).execute(
+                new RunnerRowData(item),
+                new ExecutionVariableContext(),
+                () -> true
+        );
+
+        assertEquals(result.getStatus(), "204");
+        assertSame(result.getAssertion(), AssertionResult.NO_TESTS);
+        assertNull(result.getErrorMessage());
+        assertTrue(result.getTestResults().isEmpty());
+    }
+
+    @Test
+    public void shouldKeepExistingFunctionalPreRequestResultBehavior() {
+        HttpRequestItem item = new HttpRequestItem();
+        item.setName("Functional pre-request assertion");
+        item.setMethod("GET");
+        item.setUrl("https://example.test/pre-request");
+        item.setPrescript("pm.test('legacy pre test', function () { pm.expect(1).to.equal(2); });");
+
+        FunctionalRequestExecutionResult result = new FunctionalRequestExecutor(
+                null,
+                new CapturingTransport()
+        ).execute(
+                new RunnerRowData(item),
+                new ExecutionVariableContext(),
+                () -> true
+        );
+
+        assertEquals(result.getStatus(), "204");
+        assertSame(result.getAssertion(), AssertionResult.NO_TESTS);
+        assertTrue(result.getTestResults().isEmpty());
+    }
+
     private static final class CapturingTransport implements HttpTransport {
         private PreparedRequest request;
 
@@ -54,6 +103,7 @@ public class FunctionalRequestExecutorTest {
             HttpResponse response = new HttpResponse();
             response.code = 204;
             response.costMs = 12L;
+            response.headers = new LinkedHashMap<>();
             return response;
         }
 

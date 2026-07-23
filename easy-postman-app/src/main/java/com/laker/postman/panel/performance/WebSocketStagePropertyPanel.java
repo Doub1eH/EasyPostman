@@ -6,6 +6,7 @@ import com.laker.postman.performance.core.model.WebSocketPerformanceData;
 import com.laker.postman.common.component.EasyJSpinner;
 import com.laker.postman.common.component.EasyComboBox;
 import com.laker.postman.common.component.EasyTextField;
+import com.laker.postman.common.component.FallbackAwareRSyntaxTextArea;
 import com.laker.postman.common.component.SearchableTextArea;
 import com.laker.postman.common.component.ToolWindowSurfaceStyle;
 import com.laker.postman.common.component.button.SnippetButton;
@@ -16,7 +17,6 @@ import com.laker.postman.common.component.tab.IndicatorTabComponent;
 import com.laker.postman.common.constants.ModernColors;
 import com.laker.postman.snippet.Snippet;
 import com.laker.postman.performance.model.PerformanceTreeNode;
-import com.laker.postman.util.EditorFontManager;
 import com.laker.postman.util.EditorThemeUtil;
 import com.laker.postman.util.FontsUtil;
 import com.laker.postman.util.I18nUtil;
@@ -157,9 +157,9 @@ public class WebSocketStagePropertyPanel extends JPanel {
         );
         sendCountSpinner = EasyJSpinner.intSpinner(3, 1, 100000, 1);
         sendIntervalSpinner = EasyJSpinner.intSpinner(1000, 0, 3600000, 100);
-        customSendBodyArea = new RSyntaxTextArea(8, 40);
+        customSendBodyArea = new FallbackAwareRSyntaxTextArea(8, 40);
         configureTemplateEditor(customSendBodyArea);
-        sendPreScriptArea = new RSyntaxTextArea(8, 40);
+        sendPreScriptArea = new FallbackAwareRSyntaxTextArea(8, 40);
         sendPreScriptAc = configureScriptEditor(sendPreScriptArea);
         messageTemplateLayout = new CardLayout();
         messageTemplatePanel = new JPanel(messageTemplateLayout);
@@ -451,7 +451,6 @@ public class WebSocketStagePropertyPanel extends JPanel {
         area.setWrapStyleWord(true);
         area.setCaretColor(ModernColors.getPrimary());
         EditorThemeUtil.loadTheme(area);
-        EditorFontManager.applyConfiguredEditorFont(area);
     }
 
     private JTextArea createHintArea(String text, int rows) {
