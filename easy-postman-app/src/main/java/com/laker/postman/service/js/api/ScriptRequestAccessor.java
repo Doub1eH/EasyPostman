@@ -1,13 +1,19 @@
 package com.laker.postman.service.js.api;
 
 import com.laker.postman.http.runtime.model.PreparedRequest;
-import com.laker.postman.request.model.HttpHeader;
-import com.laker.postman.request.model.HttpParam;
 import com.laker.postman.request.model.HttpFormData;
 import com.laker.postman.request.model.HttpFormUrlencoded;
-
+import com.laker.postman.request.model.HttpHeader;
+import com.laker.postman.request.model.HttpParam;
+import com.laker.postman.request.model.RequestBodyTypes;
 
 import java.util.ArrayList;
+import java.util.Collection;
+import java.util.LinkedHashMap;
+import java.util.List;
+import java.util.Locale;
+import java.util.Map;
+import java.util.Objects;
 
 /**
  * 脚本请求访问器 (pm.request)
@@ -36,17 +42,18 @@ import java.util.ArrayList;
  *     value: "Bearer " + pm.environment.get("token")
  * });
  *
- * // 修改请求体
- * pm.request.body = JSON.stringify({userId: 123});
+ * // 修改 raw 请求体（Collection SDK 形态的 EasyPostman 迁移扩展）
+ * pm.request.body.update(JSON.stringify({userId: 123}));
  *
  * // 添加表单数据
- * pm.request.formData.add({
+ * pm.request.body.formdata.add({
  *     key: "username",
- *     value: "john"
+ *     value: "john",
+ *     type: "text"
  * });
  *
  * // 添加 URL 查询参数
- * pm.request.params.add({
+ * pm.request.url.query.add({
  *     key: "timestamp",
  *     value: Date.now()
  * });
@@ -98,9 +105,10 @@ public class ScriptRequestAccessor {
     public String method;
 
     /**
-     * 请求体内容
+     * Postman RequestBody 对象。声明为 Object 是为了保留 Collection SDK body definition
+     * 形态，并支持 EasyPostman 的迁移扩展：整个 body definition 或字符串赋值。
      */
-    public String body;
+    public Object body;
 
     /**
      * 是否为 multipart 请求
@@ -111,6 +119,10 @@ public class ScriptRequestAccessor {
      * 是否跟随重定向
      */
     public boolean followRedirects;
+
+    private final ScriptRequestMutationTracker mutationTracker = new ScriptRequestMutationTracker();
+    private RequestSnapshot syncedSnapshot;
+    private ScriptRequestBodyAccessor bodyAccessor;
 
     /**
      * 构造脚本请求访问器
@@ -123,32 +135,273 @@ public class ScriptRequestAccessor {
      */
     public ScriptRequestAccessor(PreparedRequest req) {
         this.raw = req;
+        ensureRequestCollections();
+        reloadViewFromRaw();
+    }
 
-        // 确保 List 不为 null，并关联到 PreparedRequest
-        if (req.headersList == null) {
-            req.headersList = new ArrayList<>();
+    private void ensureRequestCollections() {
+        if (raw.headersList == null) {
+            raw.headersList = new ArrayList<>();
         }
-        if (req.formDataList == null) {
-            req.formDataList = new ArrayList<>();
+        if (raw.formDataList == null) {
+            raw.formDataList = new ArrayList<>();
         }
-        if (req.urlencodedList == null) {
-            req.urlencodedList = new ArrayList<>();
+        if (raw.urlencodedList == null) {
+            raw.urlencodedList = new ArrayList<>();
         }
-        if (req.paramsList == null) {
-            req.paramsList = new ArrayList<>();
+        if (raw.paramsList == null) {
+            raw.paramsList = new ArrayList<>();
+        }
+    }
+
+    private void reloadViewFromRaw() {
+        Runnable bodyMutation = mutationTracker.bodyWriteCallback();
+        this.headers = new JsListWrapper<>(raw.headersList, JsListWrapper.ListType.HEADER);
+        this.formData = new JsListWrapper<>(raw.formDataList, JsListWrapper.ListType.FORM_DATA, bodyMutation);
+        this.urlencoded = new JsListWrapper<>(raw.urlencodedList, JsListWrapper.ListType.URLENCODED, bodyMutation);
+        this.id = raw.id;
+        this.url = new UrlWrapper(raw.url, raw.paramsList);
+        this.params = this.url.query.asListWrapper();
+        this.method = raw.method;
+        this.bodyAccessor = ScriptRequestBodyAccessor.hasBody(raw)
+                ? new ScriptRequestBodyAccessor(raw, formData, urlencoded, mutationTracker)
+                : null;
+        this.body = bodyAccessor;
+        this.isMultipart = raw.isMultipart;
+        this.followRedirects = raw.followRedirects;
+        this.syncedSnapshot = snapshot();
+    }
+
+    /**
+     * Mirrors the Postman Collection SDK {@code Request.update(options)} method for the request
+     * properties that EasyPostman's HTTP runtime can send.
+     */
+    public void update(Object options) {
+        Object converted = ScriptValueConverter.toJavaObject(options);
+        if (!(converted instanceof Map<?, ?> definition)) {
+            return;
         }
 
-        // 直接包装 PreparedRequest 中的 List，确保前置脚本修改能生效
-        this.headers = new JsListWrapper<>(req.headersList, JsListWrapper.ListType.HEADER);
-        this.formData = new JsListWrapper<>(req.formDataList, JsListWrapper.ListType.FORM_DATA);
-        this.urlencoded = new JsListWrapper<>(req.urlencodedList, JsListWrapper.ListType.URLENCODED);
-        this.params = new JsListWrapper<>(req.paramsList, JsListWrapper.ListType.PARAM);
+        if (definition.containsKey("url")) {
+            UrlWrapper.ResolvedUrl resolvedUrl = UrlWrapper.resolveDefinition(definition.get("url"));
+            raw.url = resolvedUrl.url();
+            raw.paramsList.clear();
+            raw.paramsList.addAll(resolvedUrl.params());
+            this.url = new UrlWrapper(raw.url, raw.paramsList);
+            this.params = this.url.query.asListWrapper();
+        }
+        if (definition.containsKey("method")) {
+            Object requestedMethod = definition.get("method");
+            this.method = requestedMethod == null ? "GET" : requestedMethod.toString().toUpperCase(Locale.ROOT);
+        }
+        if (definition.containsKey("header") && isPostmanTruthy(definition.get("header"))) {
+            replaceHeaders(definition.get("header"));
+        }
+        if (definition.containsKey("body")) {
+            replaceBody(definition.get("body"));
+        }
+    }
 
-        this.id = req.id;
-        this.url = new UrlWrapper(req.url, req.paramsList);
-        this.method = req.method;
-        this.body = req.body;
-        this.isMultipart = req.isMultipart;
-        this.followRedirects = req.followRedirects;
+    /**
+     * 将 JavaScript 对公共字段的修改同步回真正用于发送的请求。
+     * <p>
+     * 集合方法直接操作底层 List，集合元素代理、标量字段和 URL 查询参数代理
+     * 则在前置脚本结束后写回。同步时只覆盖脚本确实修改过的字段，
+     * 避免覆盖通过 {@code pm.request.raw} 或 {@code request} 直接完成的修改。
+     * </p>
+     */
+    public boolean syncToRaw() {
+        headers.sync();
+        formData.sync();
+        urlencoded.sync();
+        if (!Objects.equals(method, syncedSnapshot.method())) {
+            raw.method = method == null ? "GET" : method.toUpperCase(Locale.ROOT);
+        }
+        boolean bodyMutated = syncBody();
+        bodyMutated |= mutationTracker.consumeBodyWrite();
+        if (followRedirects != syncedSnapshot.followRedirects()) {
+            raw.followRedirects = followRedirects;
+        }
+
+        syncUrl();
+
+        boolean rawMultipartChangedDirectly = raw.isMultipart != syncedSnapshot.isMultipart();
+        if (isMultipart != syncedSnapshot.isMultipart()) {
+            raw.isMultipart = isMultipart;
+        } else if (!rawMultipartChangedDirectly) {
+            raw.isMultipart = hasEnabledFormData();
+        }
+
+        reloadViewFromRaw();
+        return bodyMutated;
+    }
+
+    private boolean hasEnabledFormData() {
+        return raw.formDataList != null && raw.formDataList.stream()
+                .anyMatch(item -> item != null && item.isEnabled() && (item.isText() || item.isFile()));
+    }
+
+    private void syncUrl() {
+        if (url == null || url.query == null) {
+            return;
+        }
+        url.query.sync();
+        String currentUrl = url.toString();
+        if (!Objects.equals(currentUrl, syncedSnapshot.url())) {
+            raw.url = currentUrl;
+        } else if (!Objects.equals(raw.url, syncedSnapshot.rawUrl())) {
+            url = new UrlWrapper(raw.url, raw.paramsList);
+            params = url.query.asListWrapper();
+        }
+    }
+
+    private void replaceHeaders(Object headerDefinition) {
+        List<HttpHeader> replacements = new ArrayList<>();
+        JsListWrapper<HttpHeader> replacementHeaders = new JsListWrapper<>(
+                replacements,
+                JsListWrapper.ListType.HEADER
+        );
+        Object converted = ScriptValueConverter.toJavaObject(headerDefinition);
+        if (converted instanceof CharSequence headerLines) {
+            for (String line : headerLines.toString().split("\\R")) {
+                if (!line.isBlank()) {
+                    replacementHeaders.add(line);
+                }
+            }
+        } else if (converted instanceof Collection<?> collection) {
+            for (Object item : collection) {
+                addHeaderDefinition(replacementHeaders, item);
+            }
+        } else if (converted instanceof Map<?, ?> map) {
+            // Postman's PropertyList.populate treats every top-level plain object as a key/value
+            // map, even when the object itself contains properties named "key" and "value".
+            map.forEach((key, value) -> addHeaderMapEntry(replacementHeaders, key, value));
+        } else {
+            addHeaderDefinition(replacementHeaders, converted);
+        }
+
+        // Convert first so aliases such as pm.request.raw.headersList and
+        // pm.request.headers.all() stay readable until every replacement has been captured.
+        raw.headersList.clear();
+        raw.headersList.addAll(replacements);
+    }
+
+    private void addHeaderDefinition(JsListWrapper<HttpHeader> target, Object definition) {
+        Object converted = ScriptValueConverter.toJavaObject(definition);
+        if (converted instanceof JsListWrapper.ItemProxy proxy) {
+            Object item = proxy.unwrap();
+            if (item instanceof HttpHeader header) {
+                target.getList().add(header);
+            } else {
+                target.add(proxy.toDefinition());
+            }
+            return;
+        }
+        if (converted instanceof HttpHeader header) {
+            target.getList().add(header);
+            return;
+        }
+        if (converted instanceof CharSequence headerLine) {
+            target.add(headerLine.toString());
+            return;
+        }
+        if (converted instanceof Map<?, ?> map) {
+            Map<String, Object> header = new LinkedHashMap<>();
+            map.forEach((key, value) -> header.put(String.valueOf(key), value));
+            target.add(header);
+        }
+    }
+
+    private void addHeaderMapEntry(JsListWrapper<HttpHeader> target, Object key, Object value) {
+        Object convertedValue = ScriptValueConverter.toJavaObject(value);
+        if (convertedValue == null
+                || (convertedValue instanceof Double number && number.isNaN())
+                || (convertedValue instanceof Float number && number.isNaN())) {
+            return;
+        }
+        if (convertedValue instanceof CharSequence text) {
+            target.add(String.valueOf(key), text.toString());
+            return;
+        }
+        if (convertedValue instanceof Map<?, ?> definition) {
+            Map<String, Object> header = new LinkedHashMap<>();
+            definition.forEach((itemKey, itemValue) -> header.put(String.valueOf(itemKey), itemValue));
+            target.add(header);
+            return;
+        }
+
+        // Header.create(value, key) only uses the map key when value is a string. Other scalar
+        // values construct an empty Header definition in postman-collection.
+        target.add("", "");
+    }
+
+    private void replaceBody(Object definition) {
+        ScriptRequestBodyAccessor replacement = new ScriptRequestBodyAccessor(
+                raw,
+                null,
+                null,
+                mutationTracker
+        );
+        if (!replacement.replaceDefinition(definition)) {
+            return;
+        }
+
+        if (bodyAccessor != null) {
+            bodyAccessor.detach();
+        }
+        Runnable bodyMutation = mutationTracker.bodyWriteCallback();
+        formData = new JsListWrapper<>(raw.formDataList, JsListWrapper.ListType.FORM_DATA, bodyMutation);
+        urlencoded = new JsListWrapper<>(raw.urlencodedList, JsListWrapper.ListType.URLENCODED, bodyMutation);
+        bodyAccessor = replacement;
+        body = bodyAccessor;
+    }
+
+    private static boolean isPostmanTruthy(Object value) {
+        Object converted = ScriptValueConverter.toJavaObject(value);
+        if (converted == null || Boolean.FALSE.equals(converted)) {
+            return false;
+        }
+        if (converted instanceof Number number) {
+            double numericValue = number.doubleValue();
+            return numericValue != 0 && !Double.isNaN(numericValue);
+        }
+        return !(converted instanceof CharSequence text) || !text.isEmpty();
+    }
+
+    private boolean syncBody() {
+        if (body == bodyAccessor) {
+            return bodyAccessor != null && bodyAccessor.syncToRaw();
+        }
+
+        mutationTracker.recordBodyWrite();
+        if (body == null) {
+            raw.body = null;
+            raw.bodyType = RequestBodyTypes.BODY_TYPE_NONE;
+            raw.formDataList = new ArrayList<>();
+            raw.urlencodedList = new ArrayList<>();
+            raw.isMultipart = false;
+            return true;
+        }
+
+        ScriptRequestBodyAccessor replacement = new ScriptRequestBodyAccessor(
+                raw,
+                null,
+                null,
+                mutationTracker
+        );
+        replacement.update(body);
+        replacement.syncToRaw();
+        return true;
+    }
+
+    private RequestSnapshot snapshot() {
+        return new RequestSnapshot(method, isMultipart, followRedirects, url.toString(), raw.url);
+    }
+
+    private record RequestSnapshot(String method,
+                                   boolean isMultipart,
+                                   boolean followRedirects,
+                                   String url,
+                                   String rawUrl) {
     }
 }

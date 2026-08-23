@@ -237,6 +237,7 @@ public class ScriptExecutionPipeline {
                         .build();
 
                 executeScript(context);
+                syncPreRequestChanges(pm);
                 return captureTestResults && pm != null && pm.testResults != null
                         ? ScriptExecutionResult.success(pm.testResults)
                         : ScriptExecutionResult.success();
@@ -322,7 +323,11 @@ public class ScriptExecutionPipeline {
                         .build();
 
                 executeScript(context);
-                return ScriptExecutionResult.success();
+                boolean requestBodyMutated = syncPreRequestChanges(pm);
+                return ScriptExecutionResult.builder()
+                        .success(true)
+                        .requestBodyMutated(requestBodyMutated)
+                        .build();
             } catch (ScriptExecutionException ex) {
                 log.error("WebSocket send script execution failed: {}", ex.getMessage(), ex);
                 appendScriptOutput("[WebSocket Send Script Error]\n" + ex.getMessage(), JsScriptExecutor.ConsoleType.ERROR);
@@ -359,6 +364,13 @@ public class ScriptExecutionPipeline {
                 pm.testResults.clear();
             }
         }
+    }
+
+    private boolean syncPreRequestChanges(PostmanApiContext pm) {
+        if (pm != null && pm.request != null) {
+            return pm.request.syncToRaw();
+        }
+        return false;
     }
 
     /**

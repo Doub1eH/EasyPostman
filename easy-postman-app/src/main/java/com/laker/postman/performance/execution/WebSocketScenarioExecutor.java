@@ -392,6 +392,7 @@ public class WebSocketScenarioExecutor {
             if (!failed.get() && !interrupted.get()) {
                 WebSocketScenarioPlanStepCursor scenarioSteps = new WebSocketScenarioPlanStepCursor(requestSampler, runningSupplier);
                 boolean implicitConnectAllowed = true;
+                WebSocketSendPayloadState sendPayloadState = new WebSocketSendPayloadState(req, requestBodyTemplate);
                 while (runningSupplier.getAsBoolean() && !failed.get() && !interrupted.get()) {
                     PerformancePlanElement stepElement = scenarioSteps.next();
                     if (stepElement == null) {
@@ -411,8 +412,11 @@ public class WebSocketScenarioExecutor {
                         case WS_SEND -> {
                             WebSocketPerformanceData stepCfg = WebSocketScenarioStepSupport.webSocketData(stepElement, baseRequestCfg);
                             lastStepCfgRef.set(stepCfg);
-                            if (stepCfg.sendMode == WebSocketPerformanceData.SendMode.NONE
-                                    || !WebSocketScenarioStepSupport.hasSendPayload(req, requestBodyTemplate, stepCfg)) {
+                            if (stepCfg.sendMode == WebSocketPerformanceData.SendMode.NONE) {
+                                break;
+                            }
+                            if (CharSequenceUtil.isBlank(stepCfg.sendPreScript)
+                                    && !sendPayloadState.hasPayload(stepCfg)) {
                                 break;
                             }
                             WebSocketScenarioSession session = sessionManager.currentOpenSession();
@@ -445,6 +449,7 @@ public class WebSocketScenarioExecutor {
                                     ));
                                     break;
                                 }
+                                String bodyBeforeSendScript = sendPayloadState.bodyBeforeScript();
                                 var sendScriptResult = WebSocketScenarioStepSupport.executeSendPreScript(
                                         scriptRuntime,
                                         stepCfg,
@@ -457,7 +462,14 @@ public class WebSocketScenarioExecutor {
                                     errorRef.set("WebSocket send pre-script failed: " + sendScriptResult.getErrorMessage());
                                     break;
                                 }
-                                String payload = WebSocketScenarioStepSupport.resolveSendPayload(req, requestBodyTemplate, stepCfg);
+                                sendPayloadState.captureScriptBodyWrite(
+                                        bodyBeforeSendScript,
+                                        sendScriptResult.isRequestBodyMutated()
+                                );
+                                if (!sendPayloadState.hasPayload(stepCfg)) {
+                                    break;
+                                }
+                                String payload = sendPayloadState.resolvePayload(stepCfg);
                                 boolean sent = webSocket.send(payload == null ? "" : payload);
                                 if (sent) {
                                     sentMessageCount.incrementAndGet();
