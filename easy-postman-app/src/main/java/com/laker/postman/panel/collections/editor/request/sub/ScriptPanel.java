@@ -69,17 +69,19 @@ public class ScriptPanel extends JPanel {
         // 创建选项卡面板 垂直方向
         tabbedPane = new JTabbedPane(SwingConstants.LEFT);
         ToolWindowSurfaceStyle.applyTabbedPaneCard(tabbedPane);
+        String prescriptTabTitle = I18nUtil.getMessage(MessageKeys.SCRIPT_PRESCRIPT_TAB_TITLE);
+        String postscriptTabTitle = I18nUtil.getMessage(MessageKeys.SCRIPT_POSTSCRIPT_TAB_TITLE);
 
         // 创建带指示器的 Tab 组件
-        preScriptTab = new IndicatorTabComponent("Pre-script");
-        postScriptTab = new IndicatorTabComponent("Post-script");
+        preScriptTab = new IndicatorTabComponent(prescriptTabTitle);
+        postScriptTab = new IndicatorTabComponent(postscriptTabTitle);
 
         // Pre-script 标签带指示器
-        tabbedPane.addTab("Pre-script", prescriptSearchableArea);
+        tabbedPane.addTab(prescriptTabTitle, prescriptSearchableArea);
         tabbedPane.setTabComponentAt(0, preScriptTab);
 
         // Post-script 标签带指示器
-        tabbedPane.addTab("Post-script", postscriptSearchableArea);
+        tabbedPane.addTab(postscriptTabTitle, postscriptSearchableArea);
         tabbedPane.setTabComponentAt(1, postScriptTab);
 
         // 添加文档监听器以更新指示器
