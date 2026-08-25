@@ -9,7 +9,7 @@
 
 [![GitHub license](https://img.shields.io/github/license/lakernote/easy-postman?style=flat-square)](https://github.com/lakernote/easy-postman/blob/main/LICENSE)
 [![GitHub release](https://img.shields.io/github/v/release/lakernote/easy-postman?style=flat-square&color=brightgreen)](https://github.com/lakernote/easy-postman/releases)
-[![GitHub downloads](https://img.shields.io/github/downloads/lakernote/easy-postman/total?style=flat-square&color=blue)](https://github.com/lakernote/easy-postman/releases)
+[![GitHub downloads](https://img.shields.io/endpoint?url=https%3A%2F%2Fraw.githubusercontent.com%2Flakernote%2Feasy-postman%2Fbadges%2Fgithub-downloads.json&style=flat-square&cacheSeconds=3600)](https://github.com/lakernote/easy-postman/releases)
 [![GitHub stars](https://img.shields.io/github/stars/lakernote/easy-postman?style=flat-square&color=yellow)](https://github.com/lakernote/easy-postman/stargazers)
 [![Java](https://img.shields.io/badge/Java-17+-ED8B00?style=flat-square&logo=openjdk&logoColor=white)](https://openjdk.org/)
 [![Platform](https://img.shields.io/badge/Platform-Windows%20%7C%20macOS%20%7C%20Linux-0078D4?style=flat-square&logo=windows&logoColor=white)](https://github.com/lakernote/easy-postman/releases)
@@ -104,6 +104,7 @@ EasyPostman is a GUI-first tool, and the project value is easier to judge when b
 - **Variables** - Environment, global, request, and iteration data support for repeatable runs
 - **Import/Export** - Postman v2.1 and cURL support, with HAR and OpenAPI/Swagger paths under active development
 - **Headless workspace runs** - Use separate collection and functional commands to run native EasyPostman workspaces from the cross-platform JAR with CI exit codes
+- **Self-hosted Mock Server** - Create standalone routes or link multiple collections, share them on your LAN, or run them headlessly on a server, with static responses, route-level Code Mock, access keys, session state, and optional call logs
 
 ### ⚡ JMeter-style Performance Testing
 - **Scenario design in the GUI** - Thread groups, timers, extractors, assertions, and result views
@@ -135,12 +136,29 @@ EasyPostman is a GUI-first tool, and the project value is easier to judge when b
 
 🔗 **[GitHub Releases](https://github.com/lakernote/easy-postman/releases)** | **[Gitee Mirror (China)](https://gitee.com/lakernote/easy-postman/releases)**
 
+### Install with WinGet (Windows)
+
+Package ID: [`Laker.EasyPostman`](https://github.com/microsoft/winget-pkgs/tree/master/manifests/l/Laker/EasyPostman)
+
+```powershell
+winget install --id Laker.EasyPostman --exact
+```
+
+Upgrade to the latest version:
+
+```powershell
+winget upgrade --id Laker.EasyPostman --exact
+```
+
+> WinGet Community Repository updates may become available shortly after the corresponding GitHub Release.
+
 ### Platform Downloads
 
 | Platform | Package | Notes |
 |----------|---------|-------|
 | 🍎 **macOS (Apple Silicon)** | `EasyPostman-{version}-macos-arm64.dmg` | M1/M2/M3/M4 |
 | 🍏 **macOS (Intel)** | `EasyPostman-{version}-macos-x86_64.dmg` | Intel-based Mac |
+| 🪟 **Windows (WinGet)** | `Laker.EasyPostman` | Install and upgrade from the WinGet Community Repository |
 | 🪟 **Windows (Installer)** | `EasyPostman-{version}-windows-x64.exe` | Auto-update support |
 | 🪟 **Windows (Portable)** | `EasyPostman-{version}-windows-x64-portable.zip` | No install needed |
 | 🐧 **Linux AMD64 (Generic)** | `EasyPostman-{version}-linux-amd64.deb` | For common `x86_64` / `amd64` Linux systems |
@@ -175,6 +193,7 @@ EasyPostman is a GUI-first tool, and the project value is easier to judge when b
 | Platform | Command / Action |
 |----------|-----------------|
 | macOS | Open DMG → drag to Applications |
+| Windows (WinGet) | `winget install --id Laker.EasyPostman --exact` |
 | Windows Installer | Run `.exe`, follow wizard |
 | Windows Portable | Extract ZIP → run `EasyPostman.exe` |
 | Linux DEB (AMD64, Generic) | `sudo dpkg -i EasyPostman-{version}-linux-amd64.deb` |

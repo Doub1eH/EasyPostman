@@ -1,19 +1,25 @@
 package com.laker.postman.panel.topmenu.setting;
 
+import com.laker.postman.test.AbstractSwingUiTest;
 import okhttp3.HttpUrl;
 import org.testng.annotations.Test;
 
 import javax.swing.JButton;
 import javax.swing.JCheckBox;
+import javax.swing.SwingUtilities;
 import javax.swing.JTextField;
+import java.awt.Component;
+import java.awt.Container;
+import java.awt.Point;
 import java.lang.reflect.Field;
 import java.lang.reflect.Method;
+import java.util.concurrent.atomic.AtomicReference;
 
 import static org.testng.Assert.assertEquals;
 import static org.testng.Assert.assertFalse;
 import static org.testng.Assert.assertTrue;
 
-public class WebDavSyncSettingsPanelTest {
+public class WebDavSyncSettingsPanelTest extends AbstractSwingUiTest {
 
     @Test
     public void shouldWarnOnlyForNonLocalHttpWebDavUrls() {
@@ -51,7 +57,45 @@ public class WebDavSyncSettingsPanelTest {
         assertEquals(restoreButton.getClientProperty("webdav.busy"), Boolean.TRUE);
     }
 
-    private static Object field(Object target, String name) throws Exception {
+    @Test
+    public void actionButtonsShouldStayWithinTheirRow() throws Exception {
+        AtomicReference<Point> actionRowBoundsRef = new AtomicReference<>();
+
+        SwingUtilities.invokeAndWait(() -> {
+            try {
+                WebDavSyncSettingsPanel panel = new WebDavSyncSettingsPanel();
+                panel.getPreferredSize();
+                panel.setSize(580, 640);
+                layoutRecursively(panel);
+
+                JButton restoreButton = (JButton) field(panel, "restoreButton");
+                actionRowBoundsRef.set(new Point(
+                        restoreButton.getX() + restoreButton.getWidth(),
+                        restoreButton.getParent().getWidth()
+                ));
+            } catch (ReflectiveOperationException e) {
+                throw new AssertionError(e);
+            }
+        });
+
+        Point actionRowBounds = actionRowBoundsRef.get();
+        assertTrue(
+                actionRowBounds.x <= actionRowBounds.y,
+                "The restore button must stay within its row: restore="
+                        + actionRowBounds.x + ", row=" + actionRowBounds.y
+        );
+    }
+
+    private static void layoutRecursively(Container container) {
+        container.doLayout();
+        for (Component component : container.getComponents()) {
+            if (component instanceof Container child) {
+                layoutRecursively(child);
+            }
+        }
+    }
+
+    private static Object field(Object target, String name) throws ReflectiveOperationException {
         Field field = WebDavSyncSettingsPanel.class.getDeclaredField(name);
         field.setAccessible(true);
         return field.get(target);

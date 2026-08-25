@@ -9,7 +9,7 @@
 
 [![GitHub license](https://img.shields.io/github/license/lakernote/easy-postman?style=flat-square)](https://github.com/lakernote/easy-postman/blob/main/LICENSE)
 [![GitHub release](https://img.shields.io/github/v/release/lakernote/easy-postman?style=flat-square&color=brightgreen)](https://github.com/lakernote/easy-postman/releases)
-[![GitHub downloads](https://img.shields.io/github/downloads/lakernote/easy-postman/total?style=flat-square&color=blue)](https://github.com/lakernote/easy-postman/releases)
+[![GitHub downloads](https://img.shields.io/endpoint?url=https%3A%2F%2Fraw.githubusercontent.com%2Flakernote%2Feasy-postman%2Fbadges%2Fgithub-downloads.json&style=flat-square&cacheSeconds=3600)](https://github.com/lakernote/easy-postman/releases)
 [![GitHub stars](https://img.shields.io/github/stars/lakernote/easy-postman?style=flat-square&color=yellow)](https://github.com/lakernote/easy-postman/stargazers)
 [![Java](https://img.shields.io/badge/Java-17+-ED8B00?style=flat-square&logo=openjdk&logoColor=white)](https://openjdk.org/)
 [![Platform](https://img.shields.io/badge/Platform-Windows%20%7C%20macOS%20%7C%20Linux-0078D4?style=flat-square&logo=windows&logoColor=white)](https://github.com/lakernote/easy-postman/releases)
@@ -104,6 +104,7 @@ EasyPostman 是 GUI 优先的桌面工具，项目价值要同时展示两条主
 - **变量体系** - 支持环境、全局、请求和迭代数据，让请求和压测可重复执行
 - **导入导出** - 支持 Postman v2.1、cURL，HAR 和 OpenAPI/Swagger 路径持续完善中
 - **工作区无头运行** - 使用独立的集合与功能测试命令执行 EasyPostman 原生工作区，支持 CI 退出码
+- **自托管 Mock Server** - 可直接创建独立路由或关联多个集合，在局域网共享或无界面部署到服务器，支持静态响应、路由级 Code Mock、访问密钥、会话状态和可关闭调用日志
 
 ### ⚡ JMeter 风格性能测试
 - **GUI 场景编排** - 线程组、定时器、提取器、断言和结果视图
@@ -135,12 +136,29 @@ EasyPostman 是 GUI 优先的桌面工具，项目价值要同时展示两条主
 
 🔗 **[GitHub Releases](https://github.com/lakernote/easy-postman/releases)** | **[Gitee 镜像（国内）](https://gitee.com/lakernote/easy-postman/releases)**
 
+### 使用 WinGet 安装（Windows）
+
+软件包 ID：[`Laker.EasyPostman`](https://github.com/microsoft/winget-pkgs/tree/master/manifests/l/Laker/EasyPostman)
+
+```powershell
+winget install --id Laker.EasyPostman --exact
+```
+
+升级到最新版本：
+
+```powershell
+winget upgrade --id Laker.EasyPostman --exact
+```
+
+> WinGet 社区源的新版本可能会比对应的 GitHub Release 稍晚上线。
+
 ### 平台下载
 
 | 平台 | 安装包 | 说明 |
 |------|--------|------|
 | 🍎 **macOS (Apple Silicon)** | `EasyPostman-{版本号}-macos-arm64.dmg` | M1/M2/M3/M4 |
 | 🍏 **macOS (Intel)** | `EasyPostman-{版本号}-macos-x86_64.dmg` | Intel Mac |
+| 🪟 **Windows (WinGet)** | `Laker.EasyPostman` | 通过 WinGet 社区源安装和升级 |
 | 🪟 **Windows (安装版)** | `EasyPostman-{版本号}-windows-x64.exe` | 支持自动更新 |
 | 🪟 **Windows (便携版)** | `EasyPostman-{版本号}-windows-x64-portable.zip` | 解压即用 |
 | 🐧 **Linux AMD64（通用）** | `EasyPostman-{版本号}-linux-amd64.deb` | 适用于常见 `x86_64` / `amd64` Linux 系统 |
@@ -175,6 +193,7 @@ EasyPostman 是 GUI 优先的桌面工具，项目价值要同时展示两条主
 | 平台 | 操作 |
 |------|------|
 | macOS | 打开 DMG → 拖拽到应用程序 |
+| Windows（WinGet） | `winget install --id Laker.EasyPostman --exact` |
 | Windows 安装版 | 运行 `.exe`，按向导操作 |
 | Windows 便携版 | 解压 ZIP → 运行 `EasyPostman.exe` |
 | Linux DEB（AMD64 通用） | `sudo dpkg -i EasyPostman-{版本号}-linux-amd64.deb` |

@@ -192,7 +192,7 @@ public class WebSocketScenarioExecutorTest {
     @Test
     public void shouldFailSingleReadWhenNoMessageArrivesBeforeTimeout() throws Exception {
         try (MockWebServer server = new MockWebServer()) {
-            server.enqueue(new MockResponse().withWebSocketUpgrade(new WebSocketListener() {
+            server.enqueue(new MockResponse().withWebSocketUpgrade(new ClosingWebSocketListener() {
             }));
             server.start();
 
@@ -479,7 +479,7 @@ public class WebSocketScenarioExecutorTest {
         AtomicReference<String> receivedPayload = new AtomicReference<>("");
 
         try (MockWebServer server = new MockWebServer()) {
-            server.enqueue(new MockResponse().withWebSocketUpgrade(new WebSocketListener() {
+            server.enqueue(new MockResponse().withWebSocketUpgrade(new ClosingWebSocketListener() {
                 @Override
                 public void onMessage(WebSocket webSocket, String text) {
                     receivedPayload.set(text);
@@ -561,7 +561,7 @@ public class WebSocketScenarioExecutorTest {
         List<String> receivedPayloads = new CopyOnWriteArrayList<>();
 
         try (MockWebServer server = new MockWebServer()) {
-            server.enqueue(new MockResponse().withWebSocketUpgrade(new WebSocketListener() {
+            server.enqueue(new MockResponse().withWebSocketUpgrade(new ClosingWebSocketListener() {
                 @Override
                 public void onMessage(WebSocket webSocket, String text) {
                     receivedPayloads.add(text);
@@ -634,15 +634,77 @@ public class WebSocketScenarioExecutorTest {
     }
 
     @Test
-    public void shouldResolveOriginalRequestBodyTemplateForEveryRepeatedWebSocketSend() throws Exception {
+    public void shouldRunSendPreScriptBeforeRejectingEmptyRequestBody() throws Exception {
         VariablesService.getInstance().detachContext();
         IterationDataVariableService.getInstance().detachContext();
 
-        CountDownLatch serverReceivedMessages = new CountDownLatch(2);
+        CountDownLatch serverReceivedMessage = new CountDownLatch(1);
+        AtomicReference<String> receivedPayload = new AtomicReference<>();
+
+        try (MockWebServer server = new MockWebServer()) {
+            server.enqueue(new MockResponse().withWebSocketUpgrade(new ClosingWebSocketListener() {
+                @Override
+                public void onMessage(WebSocket webSocket, String text) {
+                    receivedPayload.set(text);
+                    serverReceivedMessage.countDown();
+                    webSocket.close(1000, "done");
+                }
+            }));
+            server.start();
+
+            HttpRequestItem item = new HttpRequestItem();
+            item.setId("ws-empty-body-send-script-test");
+            item.setName("WS Empty Body Send Script Test");
+            item.setProtocol(RequestItemProtocolEnum.WEBSOCKET);
+            item.setMethod("GET");
+            item.setUrl(server.url("/socket").toString().replaceFirst("^http", "ws"));
+
+            WebSocketPerformanceData requestCfg = new WebSocketPerformanceData();
+            requestCfg.connectTimeoutMs = 2000;
+
+            PerformanceTreeNode requestData = new PerformanceTreeNode("request", NodeType.REQUEST, item);
+            requestData.webSocketPerformanceData = requestCfg;
+            PerformanceTestPlanNode requestNode = new PerformanceTestPlanNode(requestData);
+            addConnectStep(requestNode, requestCfg);
+
+            PerformanceTreeNode sendStep = new PerformanceTreeNode("send", NodeType.WS_SEND);
+            sendStep.webSocketPerformanceData = new WebSocketPerformanceData();
+            sendStep.webSocketPerformanceData.sendMode = WebSocketPerformanceData.SendMode.REQUEST_BODY_ON_CONNECT;
+            sendStep.webSocketPerformanceData.sendContentSource = WebSocketPerformanceData.SendContentSource.REQUEST_BODY;
+            sendStep.webSocketPerformanceData.sendPreScript = "pm.request.body = 'created-by-send-script';";
+            requestNode.add(new PerformanceTestPlanNode(sendStep));
+
+            PerformanceRequestExecutor executor = new PerformanceRequestExecutor(
+                    () -> true,
+                    throwable -> false,
+                    ConcurrentHashMap.newKeySet(),
+                    ConcurrentHashMap.newKeySet()
+            );
+
+            executor.execute(
+                    PerformanceTestPlanCompiler.compileRequestSampler(requestNode),
+                    new ExecutionVariableContext()
+            );
+
+            assertTrue(serverReceivedMessage.await(1, TimeUnit.SECONDS),
+                    "WebSocket send script should be able to create an initially empty payload");
+            assertEquals(receivedPayload.get(), "created-by-send-script");
+        } finally {
+            VariablesService.getInstance().detachContext();
+            IterationDataVariableService.getInstance().detachContext();
+        }
+    }
+
+    @Test
+    public void shouldResolveRequestBodyTemplateAndHonorPerSendBodyMutation() throws Exception {
+        VariablesService.getInstance().detachContext();
+        IterationDataVariableService.getInstance().detachContext();
+
+        CountDownLatch serverReceivedMessages = new CountDownLatch(4);
         List<String> receivedPayloads = new CopyOnWriteArrayList<>();
 
         try (MockWebServer server = new MockWebServer()) {
-            server.enqueue(new MockResponse().withWebSocketUpgrade(new WebSocketListener() {
+            server.enqueue(new MockResponse().withWebSocketUpgrade(new ClosingWebSocketListener() {
                 @Override
                 public void onMessage(WebSocket webSocket, String text) {
                     receivedPayloads.add(text);
@@ -668,7 +730,10 @@ public class WebSocketScenarioExecutorTest {
             item.setMethod("GET");
             item.setUrl(server.url("/socket").toString().replaceFirst("^http", "ws"));
             item.setBody("{{a}}");
-            item.setPrescript("pm.variables.set('a', 'connect-value');");
+            item.setPrescript("""
+                    pm.request.body = 'wrapped-{{a}}';
+                    pm.variables.set('a', 'connect-value');
+                    """);
 
             WebSocketPerformanceData requestCfg = new WebSocketPerformanceData();
             requestCfg.connectTimeoutMs = 2000;
@@ -682,10 +747,15 @@ public class WebSocketScenarioExecutorTest {
             sendStep.webSocketPerformanceData = new WebSocketPerformanceData();
             sendStep.webSocketPerformanceData.sendMode = WebSocketPerformanceData.SendMode.REQUEST_BODY_REPEAT;
             sendStep.webSocketPerformanceData.sendContentSource = WebSocketPerformanceData.SendContentSource.REQUEST_BODY;
-            sendStep.webSocketPerformanceData.sendCount = 2;
+            sendStep.webSocketPerformanceData.sendCount = 4;
             sendStep.webSocketPerformanceData.sendIntervalMs = 0;
             sendStep.webSocketPerformanceData.sendPreScript = """
                     pm.variables.set('a', 'body-' + pm.info.wsSendIndex);
+                    if (pm.info.wsSendIndex === 1) {
+                        pm.request.body = 'wrapped-connect-value';
+                    } else if (pm.info.wsSendIndex === 2) {
+                        pm.request.body = 'direct-' + pm.info.wsSendIndex;
+                    }
                     """;
             requestNode.add(new PerformanceTestPlanNode(sendStep));
 
@@ -702,7 +772,8 @@ public class WebSocketScenarioExecutorTest {
             );
 
             assertTrue(serverReceivedMessages.await(1, TimeUnit.SECONDS), "WebSocket server should receive repeated body messages");
-            assertEquals(receivedPayloads, List.of("body-0", "body-1"));
+            assertEquals(receivedPayloads,
+                    List.of("wrapped-body-0", "wrapped-connect-value", "direct-2", "direct-2"));
         } finally {
             VariablesService.getInstance().detachContext();
             IterationDataVariableService.getInstance().detachContext();
@@ -718,7 +789,7 @@ public class WebSocketScenarioExecutorTest {
         List<String> receivedPayloads = new CopyOnWriteArrayList<>();
 
         try (MockWebServer server = new MockWebServer()) {
-            server.enqueue(new MockResponse().withWebSocketUpgrade(new WebSocketListener() {
+            server.enqueue(new MockResponse().withWebSocketUpgrade(new ClosingWebSocketListener() {
                 @Override
                 public void onMessage(WebSocket webSocket, String text) {
                     receivedPayloads.add(text);
@@ -803,7 +874,7 @@ public class WebSocketScenarioExecutorTest {
         CountDownLatch serverReceivedMessages = new CountDownLatch(3);
 
         try (MockWebServer server = new MockWebServer()) {
-            server.enqueue(new MockResponse().withWebSocketUpgrade(new WebSocketListener() {
+            server.enqueue(new MockResponse().withWebSocketUpgrade(new ClosingWebSocketListener() {
                 @Override
                 public void onMessage(WebSocket webSocket, String text) {
                     serverReceivedMessages.countDown();
@@ -879,7 +950,7 @@ public class WebSocketScenarioExecutorTest {
     @Test
     public void shouldNotRetainWebSocketResponseBodyInEfficientModeWhenReadHasNoBodyAssertion() throws Exception {
         try (MockWebServer server = new MockWebServer()) {
-            server.enqueue(new MockResponse().withWebSocketUpgrade(new WebSocketListener() {
+            server.enqueue(new MockResponse().withWebSocketUpgrade(new ClosingWebSocketListener() {
                 @Override
                 public void onOpen(WebSocket webSocket, Response response) {
                     webSocket.send("stats-only-message");
@@ -926,7 +997,7 @@ public class WebSocketScenarioExecutorTest {
     @Test
     public void shouldRunMessageCountBodyAssertionAgainstCompletionMessageOnly() throws Exception {
         try (MockWebServer server = new MockWebServer()) {
-            server.enqueue(new MockResponse().withWebSocketUpgrade(new WebSocketListener() {
+            server.enqueue(new MockResponse().withWebSocketUpgrade(new ClosingWebSocketListener() {
                 @Override
                 public void onOpen(WebSocket webSocket, Response response) {
                     webSocket.send("{\"name\":\"first\"}");
@@ -981,7 +1052,7 @@ public class WebSocketScenarioExecutorTest {
     @Test
     public void shouldFailMessageCountFromReadStartWhenTargetNotReachedBeforeReadTimeout() throws Exception {
         try (MockWebServer server = new MockWebServer()) {
-            server.enqueue(new MockResponse().withWebSocketUpgrade(new WebSocketListener() {
+            server.enqueue(new MockResponse().withWebSocketUpgrade(new ClosingWebSocketListener() {
                 @Override
                 public void onOpen(WebSocket webSocket, Response response) {
                     webSocket.send("first-only");
@@ -1032,7 +1103,7 @@ public class WebSocketScenarioExecutorTest {
     @Test
     public void shouldRetainWebSocketResponseBodyForRequestLevelBodyAssertion() throws Exception {
         try (MockWebServer server = new MockWebServer()) {
-            server.enqueue(new MockResponse().withWebSocketUpgrade(new WebSocketListener() {
+            server.enqueue(new MockResponse().withWebSocketUpgrade(new ClosingWebSocketListener() {
                 @Override
                 public void onOpen(WebSocket webSocket, Response response) {
                     webSocket.send("{\"name\":\"target\"}");
@@ -1076,7 +1147,7 @@ public class WebSocketScenarioExecutorTest {
     @Test
     public void shouldRetainLatestWebSocketMessageOutsideEfficientMode() throws Exception {
         try (MockWebServer server = new MockWebServer()) {
-            server.enqueue(new MockResponse().withWebSocketUpgrade(new WebSocketListener() {
+            server.enqueue(new MockResponse().withWebSocketUpgrade(new ClosingWebSocketListener() {
                 @Override
                 public void onOpen(WebSocket webSocket, Response response) {
                     webSocket.send("latest-message");
@@ -1121,7 +1192,7 @@ public class WebSocketScenarioExecutorTest {
     @Test
     public void shouldRunRequestLevelBodyAssertionAgainstLatestWebSocketMessage() throws Exception {
         try (MockWebServer server = new MockWebServer()) {
-            server.enqueue(new MockResponse().withWebSocketUpgrade(new WebSocketListener() {
+            server.enqueue(new MockResponse().withWebSocketUpgrade(new ClosingWebSocketListener() {
                 @Override
                 public void onOpen(WebSocket webSocket, Response response) {
                     webSocket.send("first-message");
@@ -1179,7 +1250,7 @@ public class WebSocketScenarioExecutorTest {
 
         try (MockWebServer server = new MockWebServer()) {
             for (int i = 0; i < 2; i++) {
-                server.enqueue(new MockResponse().withWebSocketUpgrade(new WebSocketListener() {
+                server.enqueue(new MockResponse().withWebSocketUpgrade(new ClosingWebSocketListener() {
                     private int connectionNumber;
 
                     @Override
@@ -1251,7 +1322,7 @@ public class WebSocketScenarioExecutorTest {
     @Test
     public void shouldExcludeWebSocketCloseCleanupFromReportedCost() throws Exception {
         try (MockWebServer server = new MockWebServer()) {
-            server.enqueue(new MockResponse().withWebSocketUpgrade(new WebSocketListener() {
+            server.enqueue(new MockResponse().withWebSocketUpgrade(new ClosingWebSocketListener() {
                 @Override
                 public void onOpen(WebSocket webSocket, Response response) {
                     webSocket.send("hello");
@@ -1301,7 +1372,7 @@ public class WebSocketScenarioExecutorTest {
     public void shouldUseOneStableMetricsKeyForSingleWebSocketSession() throws Exception {
         try (MockWebServer server = new MockWebServer()) {
             CountDownLatch serverReceivedMessage = new CountDownLatch(1);
-            server.enqueue(new MockResponse().withWebSocketUpgrade(new WebSocketListener() {
+            server.enqueue(new MockResponse().withWebSocketUpgrade(new ClosingWebSocketListener() {
                 @Override
                 public void onMessage(WebSocket webSocket, String text) {
                     serverReceivedMessage.countDown();
@@ -1348,7 +1419,7 @@ public class WebSocketScenarioExecutorTest {
         try (MockWebServer server = new MockWebServer()) {
             CountDownLatch firstMessageReceived = new CountDownLatch(1);
             AtomicBoolean running = new AtomicBoolean(true);
-            server.enqueue(new MockResponse().withWebSocketUpgrade(new WebSocketListener() {
+            server.enqueue(new MockResponse().withWebSocketUpgrade(new ClosingWebSocketListener() {
                 @Override
                 public void onMessage(WebSocket webSocket, String text) {
                     firstMessageReceived.countDown();
@@ -1409,7 +1480,7 @@ public class WebSocketScenarioExecutorTest {
     @Test
     public void shouldExplainRemoteCloseDuringRepeatedSend() throws Exception {
         try (MockWebServer server = new MockWebServer()) {
-            server.enqueue(new MockResponse().withWebSocketUpgrade(new WebSocketListener() {
+            server.enqueue(new MockResponse().withWebSocketUpgrade(new ClosingWebSocketListener() {
                 @Override
                 public void onMessage(WebSocket webSocket, String text) {
                     webSocket.close(1000, "server idle timeout");
@@ -1469,6 +1540,13 @@ public class WebSocketScenarioExecutorTest {
 
         assertTrue(message.contains("OkHttp client closed the WebSocket"), message);
         assertTrue(message.contains("peer did not respond to ping"), message);
+    }
+
+    private static class ClosingWebSocketListener extends WebSocketListener {
+        @Override
+        public void onClosing(WebSocket webSocket, int code, String reason) {
+            webSocket.close(code, reason);
+        }
     }
 
     private static final class SlowWebSocketSessionEndMetrics extends PerformanceRealtimeMetrics {

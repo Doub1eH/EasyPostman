@@ -29,6 +29,7 @@ public class WebDavSyncSettingsPanel extends ModernSettingsPanel {
     private static final int ACTION_BUTTON_HEIGHT = 34;
     private static final int ACTION_BUTTON_MIN_WIDTH = 96;
     private static final int ACTION_BUTTON_HORIZONTAL_PADDING = 36;
+    private static final int ACTION_BUTTON_MIN_HORIZONTAL_PADDING = 24;
 
     private final WebDavSyncService syncService = new WebDavSyncService();
 
@@ -178,7 +179,7 @@ public class WebDavSyncSettingsPanel extends ModernSettingsPanel {
         button.setToolTipText(tooltip);
         Dimension size = actionButtonSize(button);
         button.setPreferredSize(size);
-        button.setMinimumSize(size);
+        button.setMinimumSize(actionButtonMinimumSize(button, size));
         button.setMaximumSize(size);
         return button;
     }
@@ -186,6 +187,12 @@ public class WebDavSyncSettingsPanel extends ModernSettingsPanel {
     private Dimension actionButtonSize(AbstractButton button) {
         int textWidth = button.getFontMetrics(button.getFont()).stringWidth(button.getText());
         int width = Math.max(ACTION_BUTTON_MIN_WIDTH, textWidth + ACTION_BUTTON_HORIZONTAL_PADDING);
+        return new Dimension(width, ACTION_BUTTON_HEIGHT);
+    }
+
+    private Dimension actionButtonMinimumSize(AbstractButton button, Dimension preferredSize) {
+        int textWidth = button.getFontMetrics(button.getFont()).stringWidth(button.getText());
+        int width = Math.min(preferredSize.width, textWidth + ACTION_BUTTON_MIN_HORIZONTAL_PADDING);
         return new Dimension(width, ACTION_BUTTON_HEIGHT);
     }
 
