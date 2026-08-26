@@ -55,6 +55,7 @@ public class ResponseBodyPanel extends JPanel {
     private final EasyComboBox<String> syntaxComboBox;
     private final FormatButton formatButton;
     private final CopyButton copyButton;
+    private final GenerateModelButton generateModelButton;
     private final WrapToggleButton wrapButton;
     private final SearchableTextArea searchableTextArea; // 带搜索功能的文本编辑器
 
@@ -157,6 +158,11 @@ public class ResponseBodyPanel extends JPanel {
         toolBarPanel.add(copyButton);
         toolBarPanel.add(Box.createHorizontalStrut(1));
 
+        generateModelButton = new GenerateModelButton(I18nUtil.getMessage(MessageKeys.JSON_MODEL_GENERATOR_TITLE));
+        generateModelButton.addActionListener(e -> JsonModelGeneratorDialog.showDialog(this, responseBodyPane.getText(), "Response"));
+        toolBarPanel.add(generateModelButton);
+        toolBarPanel.add(Box.createHorizontalStrut(1));
+
         // 下载按钮
         downloadButton = new DownloadButton();
         toolBarPanel.add(downloadButton);
@@ -175,6 +181,7 @@ public class ResponseBodyPanel extends JPanel {
         copyButton.addActionListener(e -> copyToClipboard());
         wrapButton.addActionListener(e -> toggleLineWrap());
         syntaxComboBox.addActionListener(e -> onSyntaxComboChanged());
+        updateGenerateModelButtonState();
     }
 
     /**
@@ -374,6 +381,7 @@ public class ResponseBodyPanel extends JPanel {
 
         // Java Sound 原生支持的音频内置播放；其他音频编码和视频交给系统播放器。
         if ((isAudio || isVideo) && resp.filePath != null && !resp.filePath.isEmpty()) {
+            generateModelButton.setEnabled(false);
             imagePreviewLabel.setIcon(null);
             imagePreviewLabel.setText(null);
             sizeWarningLabel.setVisible(false);
@@ -390,6 +398,7 @@ public class ResponseBodyPanel extends JPanel {
 
         // 图片预览
         if (resp.isImage && resp.filePath != null && !resp.filePath.isEmpty()) {
+            generateModelButton.setEnabled(false);
             showImagePreview(resp.filePath, resp.bodySize);
             return;
         }
@@ -414,6 +423,7 @@ public class ResponseBodyPanel extends JPanel {
         // 设置语法高亮和文本
         responseBodyPane.setSyntaxEditingStyle(syntax);
         responseBodyPane.setText(text);
+        updateGenerateModelButtonState();
 
         // 根据设置和大小决定是否自动格式化
         if (SettingManager.isAutoFormatResponse() && textSize < MAX_AUTO_FORMAT_SIZE) {
@@ -512,9 +522,14 @@ public class ResponseBodyPanel extends JPanel {
 
         if (formatButton != null) formatButton.setEnabled(enabled);
         if (copyButton != null) copyButton.setEnabled(enabled);
+        updateGenerateModelButtonState();
         if (wrapButton != null) wrapButton.setEnabled(enabled);
         if (saveResponseButton != null) saveResponseButton.setEnabled(enabled);
         mediaResponsePanel.setEnabled(enabled);
+    }
+
+    private void updateGenerateModelButtonState() {
+        generateModelButton.setEnabled(isEnabled() && JsonUtil.isTypeJSON(responseBodyPane.getText()));
     }
 
     // ========== 辅助方法 ==========
@@ -603,6 +618,7 @@ public class ResponseBodyPanel extends JPanel {
      */
     private void clearResponseBody() {
         responseBodyPane.setText("");
+        updateGenerateModelButtonState();
         currentFilePath = null;
         fileName = DEFAULT_FILE_NAME;
         lastHeaders = null;
