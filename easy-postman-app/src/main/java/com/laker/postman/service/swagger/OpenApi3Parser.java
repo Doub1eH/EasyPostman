@@ -311,7 +311,10 @@ class OpenApi3Parser {
     }
 
     private static void parseSecurity(JSONObject openApiRoot, JSONObject operation, HttpRequestItem req, JSONObject securitySchemes) {
-        JSONArray security = operation.getJSONArray("security");
+        // OpenAPI 允许在根节点声明全局认证；操作节点显式声明时才覆盖全局配置。
+        JSONArray security = operation.containsKey("security")
+                ? operation.getJSONArray("security")
+                : openApiRoot.getJSONArray("security");
         if (security == null || security.isEmpty() || securitySchemes == null) {
             req.setAuthType(AUTH_TYPE_NONE);
             return;
@@ -387,7 +390,7 @@ class OpenApi3Parser {
         log.info("解析到 {} 个服务器配置，将创建对应的环境变量", servers.size());
         for (int i = 0; i < servers.size(); i++) {
             JSONObject server = servers.getJSONObject(i);
-            String url = server.getStr("url", "");
+            String url = resolveServerUrl(server);
             if (url.isBlank()) {
                 continue;
             }
@@ -408,6 +411,21 @@ class OpenApi3Parser {
 
             result.addEnvironment(env);
         }
+    }
+
+    private static String resolveServerUrl(JSONObject server) {
+        String url = server.getStr("url", "");
+        JSONObject variables = server.getJSONObject("variables");
+        if (variables == null || variables.isEmpty()) {
+            return url;
+        }
+        for (String varName : variables.keySet()) {
+            JSONObject varObj = variables.getJSONObject(varName);
+            if (varObj != null) {
+                url = url.replace("{" + varName + "}", varObj.getStr("default", ""));
+            }
+        }
+        return url;
     }
 
     private static void parseExtensionEnvironments(JSONObject openApiRoot, CollectionParseResult result, String apiTitle) {

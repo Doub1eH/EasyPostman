@@ -10,9 +10,11 @@ import cn.hutool.json.JSONUtil;
 import lombok.experimental.UtilityClass;
 
 import java.util.ArrayList;
+import java.util.HashSet;
 import java.util.Iterator;
 import java.util.List;
 import java.util.Locale;
+import java.util.Set;
 
 /**
  * Swagger/OpenAPI 共享工具类
@@ -48,37 +50,7 @@ class SwaggerCommonUtil {
         if (schema == null) {
             return "{}";
         }
-
-        schema = resolveRefObject(root, schema);
-
-        Object example = getExampleValue(schema);
-        if (example != null) {
-            return toJsonText(example);
-        }
-
-        String type = getSchemaType(schema);
-        if ("object".equals(type)) {
-            JSONObject properties = schema.getJSONObject("properties");
-            if (properties == null) {
-                return "{}";
-            }
-            JSONObject result = new JSONObject();
-            for (String key : properties.keySet()) {
-                result.set(key, generateExampleValue(root, properties.getJSONObject(key)));
-            }
-            return result.toString();
-        }
-
-        if ("array".equals(type)) {
-            JSONArray array = new JSONArray();
-            JSONObject items = resolveRefObject(root, schema.getJSONObject("items"));
-            if (items != null) {
-                array.add(generateExampleValue(root, items));
-            }
-            return array.toString();
-        }
-
-        return JSONUtil.toJsonStr(generateExampleValue(root, schema));
+        return toJsonText(generateExampleValue(root, schema));
     }
 
     /**
@@ -92,95 +64,115 @@ class SwaggerCommonUtil {
      * 生成示例值，支持本地 $ref
      */
     static Object generateExampleValue(JSONObject root, JSONObject schema) {
+        return generateExampleValue(root, schema, new HashSet<>());
+    }
+
+    private static Object generateExampleValue(JSONObject root, JSONObject schema, Set<String> resolvingRefs) {
         if (schema == null) {
             return "";
         }
 
-        schema = resolveRefObject(root, schema);
-
-        Object example = getExampleValue(schema);
-        if (example != null) {
-            return example;
+        String ref = schema.getStr("$ref", "");
+        if (!ref.isBlank() && !resolvingRefs.add(ref)) {
+            return emptyExampleForCircularReference(root, schema);
         }
 
-        JSONArray enumValues = schema.getJSONArray("enum");
-        if (enumValues != null && !enumValues.isEmpty()) {
-            return enumValues.get(0);
-        }
-        if (schema.containsKey("default")) {
-            return schema.get("default");
-        }
+        try {
+            schema = resolveRefObject(root, schema);
 
-        String type = getSchemaType(schema);
-        switch (type) {
-            case "string":
-                String format = schema.getStr("format", "");
-                if ("date".equals(format)) {
-                    return "2024-01-01";
-                }
-                if ("date-time".equals(format)) {
-                    return "2024-01-01T00:00:00Z";
-                }
-                if ("email".equals(format)) {
-                    return "user@example.com";
-                }
-                return "string";
+            Object example = getExampleValue(schema);
+            if (example != null) {
+                return example;
+            }
 
-            case "integer":
-                return 0;
+            JSONArray enumValues = schema.getJSONArray("enum");
+            if (enumValues != null && !enumValues.isEmpty()) {
+                return enumValues.get(0);
+            }
+            if (schema.containsKey("default")) {
+                return schema.get("default");
+            }
 
-            case "number":
-                return 0.0;
-
-            case "boolean":
-                return false;
-
-            case "array":
-                JSONArray array = new JSONArray();
-                JSONObject items = resolveRefObject(root, schema.getJSONObject("items"));
-                if (items != null) {
-                    array.add(generateExampleValue(root, items));
-                }
-                return array;
-
-            case "object":
-                JSONObject objectResult = new JSONObject();
-                JSONObject properties = schema.getJSONObject("properties");
-                if (properties != null) {
-                    for (String key : properties.keySet()) {
-                        objectResult.set(key, generateExampleValue(root, properties.getJSONObject(key)));
+            String type = getSchemaType(schema);
+            switch (type) {
+                case "string":
+                    String format = schema.getStr("format", "");
+                    if ("date".equals(format)) {
+                        return "2024-01-01";
                     }
-                }
-                return objectResult;
+                    if ("date-time".equals(format)) {
+                        return "2024-01-01T00:00:00Z";
+                    }
+                    if ("email".equals(format)) {
+                        return "user@example.com";
+                    }
+                    return "string";
 
-            default:
-                JSONArray oneOf = schema.getJSONArray("oneOf");
-                if (oneOf != null && !oneOf.isEmpty()) {
-                    return generateExampleValue(root, oneOf.getJSONObject(0));
-                }
-                JSONArray anyOf = schema.getJSONArray("anyOf");
-                if (anyOf != null && !anyOf.isEmpty()) {
-                    return generateExampleValue(root, anyOf.getJSONObject(0));
-                }
-                JSONArray allOf = schema.getJSONArray("allOf");
-                if (allOf != null && !allOf.isEmpty()) {
-                    JSONObject merged = new JSONObject();
-                    for (Object item : allOf) {
-                        if (item instanceof JSONObject part) {
-                            Object value = generateExampleValue(root, part);
-                            if (value instanceof JSONObject valueObj) {
-                                for (String key : valueObj.keySet()) {
-                                    merged.set(key, valueObj.get(key));
+                case "integer":
+                    return 0;
+
+                case "number":
+                    return 0.0;
+
+                case "boolean":
+                    return false;
+
+                case "array":
+                    JSONArray array = new JSONArray();
+                    JSONObject items = schema.getJSONObject("items");
+                    if (items != null) {
+                        array.add(generateExampleValue(root, items, resolvingRefs));
+                    }
+                    return array;
+
+                case "object":
+                    JSONObject objectResult = new JSONObject();
+                    JSONObject properties = schema.getJSONObject("properties");
+                    if (properties != null) {
+                        for (String key : properties.keySet()) {
+                            objectResult.set(key, generateExampleValue(root, properties.getJSONObject(key), resolvingRefs));
+                        }
+                    }
+                    return objectResult;
+
+                default:
+                    JSONArray oneOf = schema.getJSONArray("oneOf");
+                    if (oneOf != null && !oneOf.isEmpty()) {
+                        return generateExampleValue(root, oneOf.getJSONObject(0), resolvingRefs);
+                    }
+                    JSONArray anyOf = schema.getJSONArray("anyOf");
+                    if (anyOf != null && !anyOf.isEmpty()) {
+                        return generateExampleValue(root, anyOf.getJSONObject(0), resolvingRefs);
+                    }
+                    JSONArray allOf = schema.getJSONArray("allOf");
+                    if (allOf != null && !allOf.isEmpty()) {
+                        JSONObject merged = new JSONObject();
+                        for (Object item : allOf) {
+                            if (item instanceof JSONObject part) {
+                                Object value = generateExampleValue(root, part, resolvingRefs);
+                                if (value instanceof JSONObject valueObj) {
+                                    for (String key : valueObj.keySet()) {
+                                        merged.set(key, valueObj.get(key));
+                                    }
                                 }
                             }
                         }
+                        if (!merged.isEmpty()) {
+                            return merged;
+                        }
                     }
-                    if (!merged.isEmpty()) {
-                        return merged;
-                    }
-                }
-                return "";
+                    return "";
+            }
+        } finally {
+            if (!ref.isBlank()) {
+                resolvingRefs.remove(ref);
+            }
         }
+    }
+
+    private static Object emptyExampleForCircularReference(JSONObject root, JSONObject schema) {
+        JSONObject resolvedSchema = resolveRefObject(root, schema);
+        return "array".equals(getSchemaType(resolvedSchema)) ? new JSONArray() : new JSONObject();
     }
 
     /**
@@ -259,6 +251,10 @@ class SwaggerCommonUtil {
     }
 
     static JSONObject resolveRefObject(JSONObject root, JSONObject source) {
+        return resolveRefObject(root, source, new HashSet<>());
+    }
+
+    private static JSONObject resolveRefObject(JSONObject root, JSONObject source, Set<String> resolvingRefs) {
         if (source == null) {
             return null;
         }
@@ -267,23 +263,30 @@ class SwaggerCommonUtil {
         if (ref.isBlank()) {
             return source;
         }
-
-        Object resolved = resolveLocalRef(root, ref);
-        if (!(resolved instanceof JSONObject resolvedObject)) {
+        if (!resolvingRefs.add(ref)) {
             return source;
         }
 
-        JSONObject merged = JSONUtil.parseObj(resolvedObject.toString());
-        for (String key : source.keySet()) {
-            if (!"$ref".equals(key)) {
-                merged.set(key, source.get(key));
+        try {
+            Object resolved = resolveLocalRef(root, ref);
+            if (!(resolved instanceof JSONObject resolvedObject)) {
+                return source;
             }
-        }
 
-        if (merged.containsKey("$ref") && !ref.equals(merged.getStr("$ref"))) {
-            return resolveRefObject(root, merged);
+            JSONObject merged = JSONUtil.parseObj(resolvedObject.toString());
+            for (String key : source.keySet()) {
+                if (!"$ref".equals(key)) {
+                    merged.set(key, source.get(key));
+                }
+            }
+
+            if (merged.containsKey("$ref") && !ref.equals(merged.getStr("$ref"))) {
+                return resolveRefObject(root, merged, resolvingRefs);
+            }
+            return merged;
+        } finally {
+            resolvingRefs.remove(ref);
         }
-        return merged;
     }
 
     static Object resolveLocalRef(JSONObject root, String ref) {
@@ -323,7 +326,7 @@ class SwaggerCommonUtil {
             return toJsonText(directExample);
         }
 
-        JSONObject schema = resolveRefObject(root, mediaType.getJSONObject("schema"));
+        JSONObject schema = mediaType.getJSONObject("schema");
         if (schema == null) {
             return "";
         }
