@@ -421,6 +421,31 @@ public class SwaggerParserTest {
     }
 
     @Test
+    void testOpenAPI3ServerVariablesUseDefaultValuesInBaseUrl() {
+        String openapi3Json = """
+                {
+                  "openapi": "3.0.1",
+                  "info": {"title": "Variable Server API", "version": "1.0"},
+                  "servers": [{
+                    "url": "https://{region}.example.com/{basePath}",
+                    "variables": {
+                      "region": {"default": "api"},
+                      "basePath": {"default": "v1"}
+                    }
+                  }],
+                  "paths": {"/items": {"get": {"responses": {"200": {"description": "ok"}}}}}
+                }
+                """;
+
+        CollectionParseResult parseResult = SwaggerParser.parseSwagger(openapi3Json);
+
+        assertNotNull(parseResult);
+        Environment environment = parseResult.getEnvironments().get(0);
+        assertEquals(environment.getVariableList().get(0).getKey(), "baseUrl");
+        assertEquals(environment.getVariableList().get(0).getValue(), "https://api.example.com/v1");
+    }
+
+    @Test
     void testParseOpenAPI3RefBodyAndScripts() {
         String openapi3Json = """
                 {
@@ -485,6 +510,129 @@ public class SwaggerParserTest {
         assertEquals(request.getPrescript(), "pm.environment.set('token', '123');");
         assertTrue(request.getHeadersList().stream().anyMatch(h -> "Content-Type".equalsIgnoreCase(h.getKey())
                 && "application/json".equals(h.getValue())));
+    }
+
+    @Test
+    void testParseOpenAPI3SelfReferencingRequestBody() {
+        String openapi3Json = """
+                {
+                  "openapi": "3.0.1",
+                  "info": {"title": "Recursive API", "version": "1.0"},
+                  "paths": {
+                    "/items": {
+                      "post": {
+                        "requestBody": {
+                          "content": {
+                            "application/json": {
+                              "schema": {"$ref": "#/components/schemas/Item"}
+                            }
+                          }
+                        },
+                        "responses": {"200": {"description": "ok"}}
+                      }
+                    }
+                  },
+                  "components": {
+                    "schemas": {
+                      "Item": {
+                        "type": "object",
+                        "properties": {
+                          "name": {"type": "string"},
+                          "child": {"$ref": "#/components/schemas/Item"},
+                          "children": {
+                            "type": "array",
+                            "items": {"$ref": "#/components/schemas/Item"}
+                          }
+                        }
+                      }
+                    }
+                  }
+                }
+                """;
+
+        CollectionParseResult parseResult = SwaggerParser.parseSwagger(openapi3Json);
+
+        assertNotNull(parseResult);
+        DefaultMutableTreeNode collectionNode = TreeNodeBuilder.buildFromParseResult(parseResult);
+        DefaultMutableTreeNode groupNode = (DefaultMutableTreeNode) collectionNode.getChildAt(0);
+        DefaultMutableTreeNode requestNode = (DefaultMutableTreeNode) groupNode.getChildAt(0);
+        HttpRequestItem request = (HttpRequestItem) ((Object[]) requestNode.getUserObject())[1];
+        assertEquals(request.getBody(), "{\"name\":\"string\",\"child\":{},\"children\":[{}]}");
+    }
+
+    @Test
+    void testParseOpenAPI3IndirectlySelfReferencingRequestBody() {
+        String openapi3Json = """
+                {
+                  "openapi": "3.0.1",
+                  "info": {"title": "Mutually Recursive API", "version": "1.0"},
+                  "paths": {
+                    "/items": {
+                      "post": {
+                        "requestBody": {
+                          "content": {
+                            "application/json": {
+                              "schema": {"$ref": "#/components/schemas/A"}
+                            }
+                          }
+                        },
+                        "responses": {"200": {"description": "ok"}}
+                      }
+                    }
+                  },
+                  "components": {
+                    "schemas": {
+                      "A": {
+                        "type": "object",
+                        "properties": {"b": {"$ref": "#/components/schemas/B"}}
+                      },
+                      "B": {
+                        "type": "object",
+                        "properties": {"a": {"$ref": "#/components/schemas/A"}}
+                      }
+                    }
+                  }
+                }
+                """;
+
+        CollectionParseResult parseResult = SwaggerParser.parseSwagger(openapi3Json);
+
+        assertNotNull(parseResult);
+        DefaultMutableTreeNode collectionNode = TreeNodeBuilder.buildFromParseResult(parseResult);
+        DefaultMutableTreeNode groupNode = (DefaultMutableTreeNode) collectionNode.getChildAt(0);
+        DefaultMutableTreeNode requestNode = (DefaultMutableTreeNode) groupNode.getChildAt(0);
+        HttpRequestItem request = (HttpRequestItem) ((Object[]) requestNode.getUserObject())[1];
+        assertEquals(request.getBody(), "{\"b\":{\"a\":{}}}");
+    }
+
+    @Test
+    void testParseOpenAPI3GlobalSecurity() {
+        String openapi3Json = """
+                {
+                  "openapi": "3.0.1",
+                  "info": {"title": "Secure API", "version": "1.0"},
+                  "security": [{"bearerAuth": []}],
+                  "components": {
+                    "securitySchemes": {
+                      "bearerAuth": {"type": "http", "scheme": "bearer"}
+                    }
+                  },
+                  "paths": {
+                    "/items": {
+                      "get": {"responses": {"200": {"description": "ok"}}}
+                    }
+                  }
+                }
+                """;
+
+        CollectionParseResult parseResult = SwaggerParser.parseSwagger(openapi3Json);
+
+        assertNotNull(parseResult);
+        DefaultMutableTreeNode collectionNode = TreeNodeBuilder.buildFromParseResult(parseResult);
+        DefaultMutableTreeNode groupNode = (DefaultMutableTreeNode) collectionNode.getChildAt(0);
+        DefaultMutableTreeNode requestNode = (DefaultMutableTreeNode) groupNode.getChildAt(0);
+        HttpRequestItem request = (HttpRequestItem) ((Object[]) requestNode.getUserObject())[1];
+        assertEquals(request.getAuthType(), AUTH_TYPE_BEARER);
     }
 
     @Test

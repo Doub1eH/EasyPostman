@@ -83,6 +83,7 @@ public class RequestBodyPanel extends JPanel {
     private EditButton bulkEditButton;
     private FormatButton formatButton;
     private CompressButton compressButton;
+    private GenerateModelButton generateModelButton;
     private RequestBodyBulkEditSupport bulkEditSupport;
     private final boolean isWebSocketMode;
 
@@ -173,6 +174,12 @@ public class RequestBodyPanel extends JPanel {
         compressButton.addActionListener(e -> compressBody());
         compressButton.setVisible(isBodyTypeRAW());
         topPanel.add(compressButton);
+        topPanel.add(Box.createHorizontalStrut(1));
+
+        generateModelButton = new GenerateModelButton(I18nUtil.getMessage(MessageKeys.JSON_MODEL_GENERATOR_TITLE));
+        generateModelButton.setVisible(isBodyTypeRAW());
+        generateModelButton.addActionListener(e -> JsonModelGeneratorDialog.showDialog(this, getRawBody(), "Request"));
+        topPanel.add(generateModelButton);
         topPanel.add(Box.createHorizontalGlue());
 
         bodyTypePanel.add(topPanel, BorderLayout.NORTH);
@@ -376,9 +383,15 @@ public class RequestBodyPanel extends JPanel {
                         default:
                             bodyArea.setSyntaxEditingStyle(SyntaxConstants.SYNTAX_STYLE_NONE);
                     }
+                    updateGenerateModelButtonState();
                 }
             });
         }
+        bodyArea.getDocument().addDocumentListener(new DocumentListener() {
+            @Override public void insertUpdate(DocumentEvent event) { updateGenerateModelButtonState(); }
+            @Override public void removeUpdate(DocumentEvent event) { updateGenerateModelButtonState(); }
+            @Override public void changedUpdate(DocumentEvent event) { updateGenerateModelButtonState(); }
+        });
         return panel;
     }
 
@@ -612,6 +625,9 @@ public class RequestBodyPanel extends JPanel {
         if (compressButton != null) {
             compressButton.setVisible(editable && isRaw);
         }
+        if (generateModelButton != null) {
+            updateGenerateModelButtonState();
+        }
         if (searchButton != null) {
             searchButton.setVisible(isRaw);
         }
@@ -621,6 +637,14 @@ public class RequestBodyPanel extends JPanel {
         if (bulkEditButton != null) {
             bulkEditButton.setVisible(editable && isBulkEditable);
         }
+    }
+
+    private void updateGenerateModelButtonState() {
+        if (generateModelButton == null) return;
+        boolean jsonRawBody = editable && isBodyTypeRAW() && rawTypeComboBox != null
+                && RAW_TYPE_JSON.equals(rawTypeComboBox.getSelectedItem());
+        generateModelButton.setVisible(jsonRawBody);
+        generateModelButton.setEnabled(jsonRawBody && JsonUtil.isTypeJSON(getRawBody()));
     }
 
     private void showBulkEditDialog() {
@@ -855,6 +879,9 @@ public class RequestBodyPanel extends JPanel {
         if (compressButton != null) {
             compressButton.setVisible(editable && isBodyTypeRAW());
             compressButton.setEnabled(editable);
+        }
+        if (generateModelButton != null) {
+            updateGenerateModelButtonState();
         }
         if (wsClearInputCheckBox != null) {
             wsClearInputCheckBox.setEnabled(editable);
