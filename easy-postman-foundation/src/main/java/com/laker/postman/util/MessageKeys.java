@@ -401,6 +401,8 @@ public final class MessageKeys {
     public static final String JSON_MODEL_GENERATOR_HINT = "json.model_generator.hint";
     public static final String JSON_MODEL_GENERATOR_LANGUAGE = "json.model_generator.language";
     public static final String JSON_MODEL_GENERATOR_ROOT_NAME = "json.model_generator.root_name";
+    public static final String JSON_MODEL_GENERATOR_JAVA_SERIALIZATION = "json.model_generator.java_serialization";
+    public static final String JSON_MODEL_GENERATOR_JAVA_MODEL_STYLE = "json.model_generator.java_model_style";
     public static final String JSON_MODEL_GENERATOR_COPY = "json.model_generator.copy";
     public static final String JSON_MODEL_GENERATOR_COPIED = "json.model_generator.copied";
     public static final String JSON_MODEL_GENERATOR_INVALID_JSON = "json.model_generator.invalid_json";

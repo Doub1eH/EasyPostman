@@ -6,6 +6,7 @@ import lombok.experimental.UtilityClass;
 
 import java.util.ArrayList;
 import java.util.Iterator;
+import java.util.LinkedHashMap;
 import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Map;
@@ -15,11 +16,21 @@ import java.util.Set;
 @UtilityClass
 public class JsonModelGenerator {
     public static String generate(String json, String rootTypeName, JsonModelLanguage language) {
+        return generate(json, rootTypeName, language, JavaJsonSerializationStyle.PLAIN);
+    }
+
+    public static String generate(String json, String rootTypeName, JsonModelLanguage language,
+                                  JavaJsonSerializationStyle javaSerializationStyle) {
+        return generate(json, rootTypeName, language, javaSerializationStyle, JavaModelStyle.PLAIN_POJO);
+    }
+
+    public static String generate(String json, String rootTypeName, JsonModelLanguage language,
+                                  JavaJsonSerializationStyle javaSerializationStyle, JavaModelStyle javaModelStyle) {
         JsonNode root = JsonUtil.readTree(json);
         Context context = new Context();
         Type rootType = infer(root, context, typeName(rootTypeName, "Response"));
         return switch (language) {
-            case JAVA -> renderJava(context.models, rootType);
+            case JAVA -> renderJava(context.models, rootType, javaSerializationStyle, javaModelStyle);
             case TYPESCRIPT -> renderTypeScript(context.models, rootType);
             case CSHARP -> renderCSharp(context.models, rootType);
         };
@@ -94,33 +105,78 @@ public class JsonModelGenerator {
         context.models.remove(source);
     }
 
-    private static String renderJava(List<Model> models, Type root) {
+    private static String renderJava(List<Model> models, Type root, JavaJsonSerializationStyle serializationStyle,
+                                     JavaModelStyle modelStyle) {
         StringBuilder out = new StringBuilder();
+        boolean hasMappedProperty = models.stream().anyMatch(JsonModelGenerator::hasJavaMappedProperty);
+        if (hasMappedProperty && serializationStyle.getAnnotationImport() != null) {
+            out.append("import ").append(serializationStyle.getAnnotationImport()).append(";\n\n");
+        }
+        if (modelStyle == JavaModelStyle.LOMBOK) out.append("import lombok.Data;\n\n");
         if (root.kind == Kind.ARRAY) out.append("// Root JSON type: ").append(javaType(root)).append("\n\n");
         for (int modelIndex = 0; modelIndex < models.size(); modelIndex++) {
             Model model = models.get(modelIndex);
-            out.append(modelIndex == 0 ? "public class " : "class ").append(model.name).append(" {\n");
-            for (Field field : model.fields) {
-                String javaName = identifier(field.jsonName, false, "value");
-                out.append("    private ").append(javaType(field.type)).append(' ').append(javaName).append(";\n");
-            }
-            if (!model.fields.isEmpty()) out.append('\n');
-            for (Field field : model.fields) {
-                String fieldName = identifier(field.jsonName, false, "value");
-                String accessor = typeName(fieldName, "Value");
-                String type = javaType(field.type);
-                out.append("    public ").append(type).append(" get").append(accessor).append("() {\n")
-                        .append("        return ").append(fieldName).append(";\n")
-                        .append("    }\n\n")
-                        .append("    public void set").append(accessor).append('(').append(type).append(' ')
-                        .append(fieldName).append(") {\n")
-                        .append("        this.").append(fieldName).append(" = ").append(fieldName).append(";\n")
-                        .append("    }\n");
-                if (model.fields.indexOf(field) < model.fields.size() - 1) out.append('\n');
-            }
-            out.append("}\n\n");
+            Map<Field, String> fieldNames = javaFieldNames(model);
+            renderJavaModel(out, model, fieldNames, serializationStyle, modelStyle, modelIndex == 0);
         }
         return out.toString().trim();
+    }
+
+    private static boolean hasJavaMappedProperty(Model model) {
+        Map<Field, String> fieldNames = javaFieldNames(model);
+        return model.fields.stream().anyMatch(field -> !fieldNames.get(field).equals(field.jsonName));
+    }
+
+    private static void renderJavaModel(StringBuilder out, Model model, Map<Field, String> fieldNames,
+                                        JavaJsonSerializationStyle serializationStyle, JavaModelStyle modelStyle,
+                                        boolean rootModel) {
+        if (modelStyle == JavaModelStyle.RECORD) {
+            out.append(rootModel ? "public record " : "record ").append(model.name).append("(\n");
+            for (int index = 0; index < model.fields.size(); index++) {
+                Field field = model.fields.get(index);
+                appendJavaMapping(out, field.jsonName, fieldNames.get(field), serializationStyle);
+                out.append("    ").append(javaType(field.type)).append(' ').append(fieldNames.get(field));
+                out.append(index == model.fields.size() - 1 ? "\n" : ",\n");
+            }
+            out.append(") {\n}\n\n");
+            return;
+        }
+        if (modelStyle == JavaModelStyle.LOMBOK) out.append("@Data\n");
+        out.append(rootModel ? "public class " : "class ").append(model.name).append(" {\n");
+        for (Field field : model.fields) {
+            String javaName = fieldNames.get(field);
+            appendJavaMapping(out, field.jsonName, javaName, serializationStyle);
+            out.append("    private ").append(javaType(field.type)).append(' ').append(javaName).append(";\n");
+        }
+        if (modelStyle == JavaModelStyle.PLAIN_POJO) appendJavaAccessors(out, model, fieldNames);
+        out.append("}\n\n");
+    }
+
+    private static void appendJavaAccessors(StringBuilder out, Model model, Map<Field, String> fieldNames) {
+        if (!model.fields.isEmpty()) out.append('\n');
+        for (Field field : model.fields) {
+            String fieldName = fieldNames.get(field);
+            String accessor = typeName(fieldName, "Value");
+            String type = javaType(field.type);
+            out.append("    public ").append(type).append(" get").append(accessor).append("() {\n")
+                    .append("        return ").append(fieldName).append(";\n")
+                    .append("    }\n\n")
+                    .append("    public void set").append(accessor).append('(').append(type).append(' ')
+                    .append(fieldName).append(") {\n")
+                    .append("        this.").append(fieldName).append(" = ").append(fieldName).append(";\n")
+                    .append("    }\n");
+            if (model.fields.indexOf(field) < model.fields.size() - 1) out.append('\n');
+        }
+    }
+
+    private static void appendJavaMapping(StringBuilder out, String jsonName, String fieldName,
+                                          JavaJsonSerializationStyle serializationStyle) {
+        if (fieldName.equals(jsonName)) return;
+        if (serializationStyle.getAnnotationImport() == null) {
+            out.append("    // JSON key: ").append(escape(jsonName)).append("\n");
+        } else {
+            out.append("    ").append(serializationStyle.renderAnnotation(escape(jsonName))).append("\n");
+        }
     }
 
     private static String renderTypeScript(List<Model> models, Type root) {
@@ -130,8 +186,7 @@ public class JsonModelGenerator {
         for (Model model : models) {
             out.append("export interface ").append(model.name).append(" {\n");
             for (Field field : model.fields) {
-                String name = identifier(field.jsonName, false, "value");
-                String rendered = name.equals(field.jsonName) ? name : "'" + escape(field.jsonName) + "'";
+                String rendered = isTypeScriptIdentifier(field.jsonName) ? field.jsonName : "'" + escape(field.jsonName) + "'";
                 out.append("  ").append(rendered).append(field.optional ? "?: " : ": ").append(tsType(field.type)).append(";\n");
             }
             out.append("}\n\n");
@@ -144,8 +199,9 @@ public class JsonModelGenerator {
         if (root.kind == Kind.ARRAY) out.append("// Root JSON type: ").append(csharpType(root)).append("\n\n");
         for (Model model : models) {
             out.append("public class ").append(model.name).append("\n{\n");
+            Map<Field, String> fieldNames = csharpFieldNames(model);
             for (Field field : model.fields) {
-                String name = identifier(field.jsonName, true, "Value");
+                String name = fieldNames.get(field);
                 if (!name.equals(field.jsonName)) out.append("    [JsonPropertyName(\"").append(escape(field.jsonName)).append("\")]\n");
                 out.append("    public ").append(csharpType(field.type)).append(' ').append(name).append(" { get; set; }\n");
             }
@@ -164,7 +220,37 @@ public class JsonModelGenerator {
         case STRING -> "string"; case BOOLEAN -> "bool"; case INTEGER -> "long"; case NUMBER -> "decimal"; case OBJECT -> type.name;
         case ARRAY -> "List<" + csharpType(type.element) + ">"; case UNKNOWN -> "object"; }; }
 
-    private static String typeName(String value, String fallback) { return identifier(value, true, fallback); }
+    private static Map<Field, String> javaFieldNames(Model model) { return allocateFieldNames(model, false, "value"); }
+    private static Map<Field, String> csharpFieldNames(Model model) { return allocateFieldNames(model, true, "Value"); }
+    private static Map<Field, String> allocateFieldNames(Model model, boolean upperFirst, String fallback) {
+        Map<Field, String> names = new LinkedHashMap<>();
+        Set<String> used = new LinkedHashSet<>();
+        for (Field field : model.fields) {
+            String base = unicodeIdentifier(field.jsonName) ? field.jsonName : identifier(field.jsonName, upperFirst, fallback);
+            String name = base;
+            int suffix = 2;
+            while (!used.add(name)) name = base + suffix++;
+            names.put(field, name);
+        }
+        return names;
+    }
+    private static boolean unicodeIdentifier(String value) {
+        return value != null && !value.isBlank() && value.codePoints().anyMatch(codePoint -> codePoint > 127)
+                && isJavaIdentifier(value) && !JAVA_KEYWORDS.contains(value);
+    }
+    private static boolean isJavaIdentifier(String value) {
+        return value.codePoints().findFirst().stream().allMatch(Character::isJavaIdentifierStart)
+                && value.codePoints().skip(1).allMatch(Character::isJavaIdentifierPart);
+    }
+    private static boolean isTypeScriptIdentifier(String value) {
+        return unicodeIdentifier(value) || (value != null && value.matches("[A-Za-z_$][A-Za-z0-9_$]*"));
+    }
+    private static String javaFieldName(String jsonName) {
+        return unicodeIdentifier(jsonName) ? jsonName : identifier(jsonName, false, "value");
+    }
+    private static String typeName(String value, String fallback) {
+        return unicodeIdentifier(value) ? value : identifier(value, true, fallback);
+    }
     private static String identifier(String raw, boolean upperFirst, String fallback) {
         if (raw == null || raw.isBlank()) return fallback;
         String[] parts = raw.replaceAll("([a-z])([A-Z])", "$1 $2").split("[^A-Za-z0-9]+");
@@ -176,7 +262,10 @@ public class JsonModelGenerator {
         if (!upperFirst && JAVA_KEYWORDS.contains(result.toString())) result.append('_');
         return result.toString();
     }
-    private static String escape(String value) { return value.replace("\\", "\\\\").replace("\"", "\\\""); }
+    private static String escape(String value) {
+        return value.replace("\\", "\\\\").replace("\"", "\\\"")
+                .replace("\r", "\\r").replace("\n", "\\n");
+    }
 
     private enum Kind { STRING, BOOLEAN, INTEGER, NUMBER, OBJECT, ARRAY, UNKNOWN }
     private static final Set<String> JAVA_KEYWORDS = Set.of("abstract", "assert", "boolean", "break", "byte", "case", "catch",
