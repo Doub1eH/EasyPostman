@@ -26,13 +26,20 @@ public class JsonModelGenerator {
 
     public static String generate(String json, String rootTypeName, JsonModelLanguage language,
                                   JavaJsonSerializationStyle javaSerializationStyle, JavaModelStyle javaModelStyle) {
+        return generate(json, rootTypeName, language, javaSerializationStyle, javaModelStyle,
+                CSharpJsonSerializationStyle.SYSTEM_TEXT_JSON);
+    }
+
+    public static String generate(String json, String rootTypeName, JsonModelLanguage language,
+                                  JavaJsonSerializationStyle javaSerializationStyle, JavaModelStyle javaModelStyle,
+                                  CSharpJsonSerializationStyle csharpSerializationStyle) {
         JsonNode root = JsonUtil.readTree(json);
         Context context = new Context();
         Type rootType = infer(root, context, typeName(rootTypeName, "Response"));
         return switch (language) {
             case JAVA -> renderJava(context.models, rootType, javaSerializationStyle, javaModelStyle);
             case TYPESCRIPT -> renderTypeScript(context.models, rootType);
-            case CSHARP -> renderCSharp(context.models, rootType);
+            case CSHARP -> renderCSharp(context.models, rootType, csharpSerializationStyle);
         };
     }
 
@@ -194,15 +201,20 @@ public class JsonModelGenerator {
         return out.toString().trim();
     }
 
-    private static String renderCSharp(List<Model> models, Type root) {
-        StringBuilder out = new StringBuilder("using System.Collections.Generic;\nusing System.Text.Json.Serialization;\n\n");
+    private static String renderCSharp(List<Model> models, Type root, CSharpJsonSerializationStyle serializationStyle) {
+        StringBuilder out = new StringBuilder("using System.Collections.Generic;\n");
+        if (models.stream().anyMatch(JsonModelGenerator::hasCSharpMappedProperty)) {
+            out.append("using ").append(serializationStyle.getAnnotationImport()).append(";\n");
+        }
+        out.append('\n');
         if (root.kind == Kind.ARRAY) out.append("// Root JSON type: ").append(csharpType(root)).append("\n\n");
         for (Model model : models) {
             out.append("public class ").append(model.name).append("\n{\n");
             Map<Field, String> fieldNames = csharpFieldNames(model);
             for (Field field : model.fields) {
                 String name = fieldNames.get(field);
-                if (!name.equals(field.jsonName)) out.append("    [JsonPropertyName(\"").append(escape(field.jsonName)).append("\")]\n");
+                if (!name.equals(field.jsonName)) out.append("    ")
+                        .append(serializationStyle.renderAnnotation(escape(field.jsonName))).append("\n");
                 out.append("    public ").append(csharpType(field.type)).append(' ').append(name).append(" { get; set; }\n");
             }
             out.append("}\n\n");
@@ -222,6 +234,10 @@ public class JsonModelGenerator {
 
     private static Map<Field, String> javaFieldNames(Model model) { return allocateFieldNames(model, false, "value"); }
     private static Map<Field, String> csharpFieldNames(Model model) { return allocateFieldNames(model, true, "Value"); }
+    private static boolean hasCSharpMappedProperty(Model model) {
+        Map<Field, String> fieldNames = csharpFieldNames(model);
+        return model.fields.stream().anyMatch(field -> !fieldNames.get(field).equals(field.jsonName));
+    }
     private static Map<Field, String> allocateFieldNames(Model model, boolean upperFirst, String fallback) {
         Map<Field, String> names = new LinkedHashMap<>();
         Set<String> used = new LinkedHashSet<>();

@@ -93,6 +93,17 @@ public class JsonModelGeneratorTest {
     }
 
     @Test
+    public void shouldGenerateNewtonsoftJsonAttributesForCSharp() {
+        String code = JsonModelGenerator.generate("{\"user_id\": 7}", "Response", JsonModelLanguage.CSHARP,
+                JavaJsonSerializationStyle.PLAIN, JavaModelStyle.PLAIN_POJO,
+                CSharpJsonSerializationStyle.NEWTONSOFT_JSON);
+
+        assertTrue(code.contains("using Newtonsoft.Json;"));
+        assertTrue(code.contains("[JsonProperty(\"user_id\")]"));
+        assertTrue(!code.contains("System.Text.Json.Serialization"));
+    }
+
+    @Test
     public void shouldGenerateLombokAndRecordStyles() {
         String lombok = JsonModelGenerator.generate("{\"user_id\": 7}", "Response", JsonModelLanguage.JAVA,
                 JavaJsonSerializationStyle.PLAIN, JavaModelStyle.LOMBOK);

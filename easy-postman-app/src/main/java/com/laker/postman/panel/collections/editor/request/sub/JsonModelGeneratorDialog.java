@@ -2,6 +2,7 @@ package com.laker.postman.panel.collections.editor.request.sub;
 
 import com.laker.postman.codegen.json.JsonModelGenerator;
 import com.laker.postman.codegen.json.JsonModelLanguage;
+import com.laker.postman.codegen.json.CSharpJsonSerializationStyle;
 import com.laker.postman.codegen.json.JavaJsonSerializationStyle;
 import com.laker.postman.codegen.json.JavaModelStyle;
 import com.laker.postman.common.component.FallbackAwareRSyntaxTextArea;
@@ -25,7 +26,7 @@ import java.awt.event.KeyEvent;
 public final class JsonModelGeneratorDialog extends JDialog {
     private final String json;
     private final JComboBox<JsonModelLanguage> languageCombo = new JComboBox<>(JsonModelLanguage.values());
-    private final JComboBox<JavaJsonSerializationStyle> javaSerializationCombo = new JComboBox<>(JavaJsonSerializationStyle.values());
+    private final JComboBox<Object> serializationCombo = new JComboBox<>();
     private final JComboBox<JavaModelStyle> javaModelStyleCombo = new JComboBox<>(JavaModelStyle.values());
     private final JLabel javaSerializationLabel = new JLabel(I18nUtil.getMessage(MessageKeys.JSON_MODEL_GENERATOR_JAVA_SERIALIZATION));
     private final JLabel javaModelStyleLabel = new JLabel(I18nUtil.getMessage(MessageKeys.JSON_MODEL_GENERATOR_JAVA_MODEL_STYLE));
@@ -50,13 +51,13 @@ public final class JsonModelGeneratorDialog extends JDialog {
         setMinimumSize(new Dimension(620, 440));
         setLocationRelativeTo(getOwner());
         languageCombo.addActionListener(event -> {
-            updateJavaSerializationVisibility();
+            updateLanguageOptionsVisibility();
             regenerate();
         });
-        javaSerializationCombo.addActionListener(event -> regenerate());
+        serializationCombo.addActionListener(event -> regenerate());
         javaModelStyleCombo.addActionListener(event -> regenerate());
         rootNameField.getDocument().addDocumentListener((SimpleDocumentListener) this::regenerate);
-        updateJavaSerializationVisibility();
+        updateLanguageOptionsVisibility();
         regenerate();
     }
 
@@ -89,7 +90,7 @@ public final class JsonModelGeneratorDialog extends JDialog {
         form.add(rootLabel);
         form.add(rootNameField, "growx");
         form.add(javaSerializationLabel, "cell 0 1,hidemode 3");
-        form.add(javaSerializationCombo, "cell 1 1,growx,hidemode 3");
+        form.add(serializationCombo, "cell 1 1,growx,hidemode 3");
         form.add(javaModelStyleLabel, "cell 2 1,hidemode 3");
         form.add(javaModelStyleCombo, "cell 3 1,growx,hidemode 3");
         content.add(form, "span 2,growx,wrap");
@@ -133,8 +134,9 @@ public final class JsonModelGeneratorDialog extends JDialog {
         try {
             preview.setSyntaxEditingStyle(language.getSyntaxStyle());
             preview.setText(JsonModelGenerator.generate(json, rootNameField.getText(), language,
-                    (JavaJsonSerializationStyle) javaSerializationCombo.getSelectedItem(),
-                    (JavaModelStyle) javaModelStyleCombo.getSelectedItem()));
+                    selectedJavaSerializationStyle(),
+                    (JavaModelStyle) javaModelStyleCombo.getSelectedItem(),
+                    selectedCSharpSerializationStyle()));
             preview.setCaretPosition(0);
             hint.setText(I18nUtil.getMessage(MessageKeys.JSON_MODEL_GENERATOR_HINT));
         } catch (RuntimeException exception) {
@@ -143,13 +145,29 @@ public final class JsonModelGeneratorDialog extends JDialog {
         }
     }
 
-    private void updateJavaSerializationVisibility() {
+    private void updateLanguageOptionsVisibility() {
         boolean java = languageCombo.getSelectedItem() == JsonModelLanguage.JAVA;
-        javaSerializationLabel.setVisible(java);
-        javaSerializationCombo.setVisible(java);
+        boolean csharp = languageCombo.getSelectedItem() == JsonModelLanguage.CSHARP;
+        if (java && !(serializationCombo.getSelectedItem() instanceof JavaJsonSerializationStyle)) {
+            serializationCombo.setModel(new DefaultComboBoxModel<>(JavaJsonSerializationStyle.values()));
+        } else if (csharp && !(serializationCombo.getSelectedItem() instanceof CSharpJsonSerializationStyle)) {
+            serializationCombo.setModel(new DefaultComboBoxModel<>(CSharpJsonSerializationStyle.values()));
+        }
+        javaSerializationLabel.setVisible(java || csharp);
+        serializationCombo.setVisible(java || csharp);
         javaModelStyleLabel.setVisible(java);
         javaModelStyleCombo.setVisible(java);
         javaSerializationLabel.getParent().revalidate();
+    }
+
+    private JavaJsonSerializationStyle selectedJavaSerializationStyle() {
+        Object selection = serializationCombo.getSelectedItem();
+        return selection instanceof JavaJsonSerializationStyle style ? style : JavaJsonSerializationStyle.PLAIN;
+    }
+
+    private CSharpJsonSerializationStyle selectedCSharpSerializationStyle() {
+        Object selection = serializationCombo.getSelectedItem();
+        return selection instanceof CSharpJsonSerializationStyle style ? style : CSharpJsonSerializationStyle.SYSTEM_TEXT_JSON;
     }
 
     private interface SimpleDocumentListener extends javax.swing.event.DocumentListener {
