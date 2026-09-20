@@ -55,6 +55,7 @@ public class ModuleArchitectureBoundaryTest {
         assertTrue(Files.isDirectory(root.resolve("easy-postman-mock-core")));
         assertTrue(Files.isDirectory(root.resolve("easy-postman-platform")));
         assertTrue(Files.isDirectory(root.resolve("easy-postman-ui")));
+        assertTrue(Files.isDirectory(root.resolve("easy-postman-mcp")));
         assertFalse(Files.exists(root.resolve("easy-postman-core")));
         assertFalse(Files.exists(root.resolve("easy-postman-performance-runtime-okhttp")));
         assertFalse(Files.exists(root.resolve("easy-postman-plugin-bridge")));
@@ -67,6 +68,40 @@ public class ModuleArchitectureBoundaryTest {
             assertFalse(source.contains("easy-postman-plugin-bridge"), pom + " still references the old bridge module");
             assertFalse(source.contains("easy-postman-plugin-ui"), pom + " still references the old plugin UI module");
         }
+    }
+
+    @Test
+    public void mcpProtocolModuleStaysHostNeutral() throws IOException {
+        Path root = repositoryRoot();
+        Path mcpSource = root.resolve("easy-postman-mcp/src/main/java");
+        List<String> sourceViolations = sourcePackageViolations(mcpSource, List.of(
+                "javax.swing",
+                "java.awt",
+                "com.laker.postman.panel",
+                "com.laker.postman.workspace",
+                "com.laker.postman.service",
+                "com.laker.postman.startup"
+        ));
+        assertTrue(sourceViolations.isEmpty(),
+                "MCP protocol module must stay host-neutral: " + sourceViolations);
+
+        String mcpPom = Files.readString(root.resolve("easy-postman-mcp/pom.xml"));
+        List<String> dependencyViolations = List.of(
+                        "<artifactId>easy-postman</artifactId>",
+                        "<artifactId>easy-postman-ui</artifactId>",
+                        "<artifactId>easy-postman-platform</artifactId>",
+                        "<artifactId>easy-postman-plugin-runtime</artifactId>",
+                        "<artifactId>easy-postman-http-runtime</artifactId>"
+                ).stream().filter(mcpPom::contains).toList();
+        assertTrue(dependencyViolations.isEmpty(),
+                "MCP protocol module must not depend on host/UI/runtime implementations: " + dependencyViolations);
+
+        String appPom = Files.readString(root.resolve("easy-postman-app/pom.xml"));
+        assertTrue(appPom.contains("<artifactId>easy-postman-mcp</artifactId>"),
+                "The app must compose the standalone MCP protocol module");
+        assertFalse(Files.exists(root.resolve(
+                        "easy-postman-app/src/main/java/com/laker/postman/mcp/McpToolSpecifications.java")),
+                "Tool schemas belong in easy-postman-mcp, not the app backend adapter");
     }
 
     @Test
@@ -352,6 +387,25 @@ public class ModuleArchitectureBoundaryTest {
             String source = Files.readString(file);
             assertTrue(source.contains("java.net.http"), file + " must keep java.net.http for master HTTP client");
             assertTrue(source.contains("jdk.httpserver"), file + " must keep jdk.httpserver for worker mode");
+        }
+    }
+
+    @Test
+    public void packagingKeepsIpv4Ipv6DualStackEnabled() throws IOException {
+        Path root = repositoryRoot();
+        List<Path> packagingFiles = List.of(
+                root.resolve(".github/workflows/pr-check.yml"),
+                root.resolve(".github/workflows/release.yml"),
+                root.resolve("build/mac.sh"),
+                root.resolve("build/linux-deb.sh"),
+                root.resolve("build/linux-rpm.sh"),
+                root.resolve("build/win-exe.bat")
+        );
+
+        for (Path file : packagingFiles) {
+            String source = Files.readString(file);
+            assertFalse(source.contains("-Djava.net.preferIPv4Stack=true"),
+                    file + " must not disable IPv6 in packaged applications");
         }
     }
 

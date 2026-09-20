@@ -85,7 +85,7 @@
 
 ### 4. 同步标签 (`sync-labels.yml`)
 
-**触发时机**: 当 `.github/labels.yml` 文件更新时，或手动触发
+**触发时机**: 当 `.github/labels.json` 文件更新时，或手动触发
 
 **功能**:
 - 📋 根据 `labels.yml` 定义同步仓库标签
@@ -377,7 +377,7 @@
    - 合并或请求修改
 
 3. **维护标签**:
-   - 编辑 `.github/labels.yml`
+   - 编辑 `.github/labels.json`
    - 推送后自动同步
    - 保持标签系统整洁
 

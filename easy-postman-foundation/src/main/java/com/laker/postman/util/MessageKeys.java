@@ -1133,6 +1133,9 @@ public final class MessageKeys {
 
     // ============ 历史记录相关 ============
     public static final String HISTORY_EMPTY_BODY = "history.empty_body";
+    public static final String HISTORY_CLEAR = "history.clear";
+    public static final String HISTORY_CLEAR_TITLE = "history.clear.title";
+    public static final String HISTORY_CLEAR_CONFIRM = "history.clear.confirm";
     public static final String HISTORY_TODAY = "history.today";
     public static final String HISTORY_YESTERDAY = "history.yesterday";
     public static final String HISTORY_SEARCH_PLACEHOLDER = "history.search_placeholder";
@@ -1645,6 +1648,20 @@ public final class MessageKeys {
     public static final String RESPONSE_MEDIA_SYSTEM_UNAVAILABLE = "response.media.system_unavailable";
     public static final String RESPONSE_MEDIA_FILE_UNAVAILABLE = "response.media.file_unavailable";
     public static final String RESPONSE_MEDIA_FILE_SUMMARY = "response.media.file_summary";
+    public static final String HTTP_EVENT_ROUTE_ATTEMPTS = "http.event.route_attempts";
+    public static final String HTTP_EVENT_ROUTE_FAMILY = "http.event.route.family";
+    public static final String HTTP_EVENT_ROUTE_ADDRESS = "http.event.route.address";
+    public static final String HTTP_EVENT_ROUTE_RESULT = "http.event.route.result";
+    public static final String HTTP_EVENT_ROUTE_DURATION = "http.event.route.duration";
+    public static final String HTTP_EVENT_ROUTE_CONNECTED = "http.event.route.connected";
+    public static final String HTTP_EVENT_ROUTE_FAILED = "http.event.route.failed";
+    public static final String HTTP_EVENT_ROUTE_CANCELED = "http.event.route.canceled";
+    public static final String HTTP_EVENT_DNS_HOST = "http.event.dns_host";
+    public static final String HTTP_EVENT_DNS_ADDRESSES = "http.event.dns_addresses";
+    public static final String HTTP_EVENT_DNS_ERROR = "http.event.dns_error";
+    public static final String HTTP_EVENT_RETRIES = "http.event.retries";
+    public static final String HTTP_EVENT_FOLLOW_UPS = "http.event.follow_ups";
+    public static final String HTTP_EVENT_DECISIONS = "http.event.decisions";
 
     // ============ CSV Data Panel related ============
     public static final String CSV_STATUS_NO_DATA = "csv.status.no_data";
@@ -2400,6 +2417,17 @@ public final class MessageKeys {
     public static final String SETTINGS_WEBDAV_SYNC_DESCRIPTION = "settings.webdav_sync.description";
     public static final String SETTINGS_WEBDAV_SYNC_ENABLED_CHECKBOX = "settings.webdav_sync.enabled.checkbox";
     public static final String SETTINGS_WEBDAV_SYNC_ENABLED_TOOLTIP = "settings.webdav_sync.enabled.tooltip";
+    public static final String SETTINGS_WEBDAV_SYNC_AUTO_UPLOAD_CHECKBOX = "settings.webdav_sync.auto_upload.checkbox";
+    public static final String SETTINGS_WEBDAV_SYNC_AUTO_UPLOAD_TOOLTIP = "settings.webdav_sync.auto_upload.tooltip";
+    public static final String SETTINGS_WEBDAV_SYNC_AUTO_UPLOAD_INTERVAL = "settings.webdav_sync.auto_upload.interval";
+    public static final String SETTINGS_WEBDAV_SYNC_AUTO_UPLOAD_INTERVAL_TOOLTIP = "settings.webdav_sync.auto_upload.interval.tooltip";
+    public static final String SETTINGS_WEBDAV_SYNC_AUTO_UPLOAD_INTERVAL_15_MINUTES = "settings.webdav_sync.auto_upload.interval.15_minutes";
+    public static final String SETTINGS_WEBDAV_SYNC_AUTO_UPLOAD_INTERVAL_30_MINUTES = "settings.webdav_sync.auto_upload.interval.30_minutes";
+    public static final String SETTINGS_WEBDAV_SYNC_AUTO_UPLOAD_INTERVAL_1_HOUR = "settings.webdav_sync.auto_upload.interval.1_hour";
+    public static final String SETTINGS_WEBDAV_SYNC_AUTO_UPLOAD_INTERVAL_2_HOURS = "settings.webdav_sync.auto_upload.interval.2_hours";
+    public static final String SETTINGS_WEBDAV_SYNC_AUTO_UPLOAD_INTERVAL_6_HOURS = "settings.webdav_sync.auto_upload.interval.6_hours";
+    public static final String SETTINGS_WEBDAV_SYNC_AUTO_UPLOAD_INTERVAL_1_DAY = "settings.webdav_sync.auto_upload.interval.1_day";
+    public static final String SETTINGS_WEBDAV_SYNC_AUTO_UPLOAD_INTERVAL_MINUTES_FORMAT = "settings.webdav_sync.auto_upload.interval.minutes_format";
     public static final String SETTINGS_WEBDAV_SYNC_SERVER_URL = "settings.webdav_sync.server_url";
     public static final String SETTINGS_WEBDAV_SYNC_SERVER_URL_TOOLTIP = "settings.webdav_sync.server_url.tooltip";
     public static final String SETTINGS_WEBDAV_SYNC_REMOTE_DIRECTORY = "settings.webdav_sync.remote_directory";
@@ -2431,6 +2459,7 @@ public final class MessageKeys {
     public static final String SETTINGS_WEBDAV_SYNC_RESTORE_RESTART_TITLE = "settings.webdav_sync.restore.restart.title";
     public static final String SETTINGS_WEBDAV_SYNC_RESTORE_RESTART_MESSAGE = "settings.webdav_sync.restore.restart.message";
     public static final String SETTINGS_WEBDAV_SYNC_ACTION_FAILED = "settings.webdav_sync.action.failed";
+    public static final String SETTINGS_WEBDAV_SYNC_SNAPSHOT_PRECHECK_FAILED = "settings.webdav_sync.snapshot.precheck.failed";
     public static final String SETTINGS_WEBDAV_SYNC_VALIDATION_REQUIRED = "settings.webdav_sync.validation.required";
     public static final String SETTINGS_WEBDAV_SYNC_VALIDATION_URL = "settings.webdav_sync.validation.url";
     public static final String SETTINGS_WEBDAV_SYNC_VALIDATION_HTTP_WARNING = "settings.webdav_sync.validation.http_warning";

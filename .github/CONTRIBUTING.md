@@ -67,8 +67,8 @@ mvn clean install
 
 ```bash
 # 1. 同步最新代码
-git checkout main
-git pull upstream main
+git checkout master
+git pull upstream master
 
 # 2. 创建功能分支
 git checkout -b feature/your-feature-name
@@ -92,7 +92,7 @@ git commit -m "fix: 修复某个问题"
 git push origin feature/your-feature-name
 
 # 7. 创建 Pull Request
-# 在 GitHub 上创建 PR，从你的分支到 upstream/main
+# 在 GitHub 上创建 PR，从你的分支到 upstream/master
 ```
 
 ##### 代码规范
@@ -246,8 +246,8 @@ mvn clean install
 
 ```bash
 # 1. Sync latest code
-git checkout main
-git pull upstream main
+git checkout master
+git pull upstream master
 
 # 2. Create feature branch
 git checkout -b feature/your-feature-name
@@ -271,7 +271,7 @@ git commit -m "fix: fix some issue"
 git push origin feature/your-feature-name
 
 # 7. Create Pull Request
-# Create PR on GitHub from your branch to upstream/main
+# Create PR on GitHub from your branch to upstream/master
 ```
 
 ##### Code Standards
@@ -359,4 +359,3 @@ mvn clean compile exec:java -Dexec.mainClass="com.laker.postman.App"
 ### 🙏 Acknowledgments
 
 Thanks to all developers who have contributed to EasyPostman!
-

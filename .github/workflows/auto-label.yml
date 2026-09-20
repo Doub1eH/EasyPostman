@@ -22,7 +22,7 @@ jobs:
     steps:
       # 自动为 issues 和 PRs 添加标签
       - name: Auto label issues and PRs
-        uses: actions/github-script@v7
+        uses: actions/github-script@3a2844b7e9c422d3c10d287c895573f7108da1b3 # v9.0.0
         with:
           script: |
             // 判断是 issue 还是 pull request
@@ -108,4 +108,3 @@ jobs:
               
               console.log(`已添加标签: ${uniqueLabels.join(', ')}`);
             }
-

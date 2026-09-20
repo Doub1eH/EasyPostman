@@ -99,6 +99,7 @@ jpackage \
     --input ${DIST_INPUT_DIR} \
     --main-jar ${JAR_NAME} \
     --main-class ${MAIN_CLASS} \
+    --add-launcher EasyPostmanMCP=build/easy-postman-mcp-launcher.properties \
     --runtime-image target/runtime \
     --type deb \
     --name "${APP_NAME}" \
@@ -124,7 +125,6 @@ jpackage \
     --java-options "-Dfile.encoding=UTF-8" \
     --java-options "-Dawt.useSystemAAFontSettings=on" \
     --java-options "-Dswing.aatext=true" \
-    --java-options "-Djava.net.preferIPv4Stack=true" \
     --java-options "-Dhttp.keepAlive=true" \
     --java-options "--add-opens=java.desktop/sun.awt.X11=ALL-UNNAMED"
 

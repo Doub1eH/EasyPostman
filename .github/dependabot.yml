@@ -29,9 +29,8 @@ updates:
       # day: "monday"
       # time: "02:00"
 
-    # 限制同时打开的 PR 数量，避免一次性创建太多 PR
-    # 推荐值：3-10，根据项目活跃度调整
-    open-pull-requests-limit: 3
+    # 保留足够容量，避免已有 PR 占满队列后停止发现新的更新
+    open-pull-requests-limit: 5
 
     # 允许更新的依赖类型
     # - dependency-type: "all" 表示更新所有依赖（直接依赖和间接依赖）
@@ -43,25 +42,34 @@ updates:
     # reviewers:
     #   - "your-github-username"
 
-    # 可选：为 Dependabot PR 自动添加标签，便于管理
-    # labels:
-    #   - "dependencies"
-    #   - "automated"
+    # 为 Dependabot PR 自动添加标签，便于管理
+    labels:
+      - "dependencies"
 
     # 可选：设置提交信息前缀，便于识别
     # commit-message:
     #   prefix: "chore"
     #   include: "scope"
 
-    # 忽略某些依赖的更新
-    # 使用场景：某些依赖版本需要保持稳定，不希望自动更新
-    ignore:
-      # 忽略 okhttp 相关依赖的更新
-      - dependency-name: "com.squareup.okhttp3:okhttp"
-      - dependency-name: "com.squareup.okhttp3:okhttp-*"  # 忽略所有 okhttp 子模块
-      - dependency-name: "com.squareup.okhttp3:logging-interceptor"
-    #   - dependency-name: "org.example:unwanted"
-    #     update-types: ["version-update:semver-major"]  # 忽略主版本更新
+    # 合并兼容性风险较低的小版本和补丁更新，减少 PR 噪音
+    groups:
+      maven-minor-and-patch:
+        update-types:
+          - "minor"
+          - "patch"
+
+  # GitHub Actions 依赖更新配置
+  - package-ecosystem: "github-actions"
+    directory: "/"
+    schedule:
+      interval: "weekly"
+    open-pull-requests-limit: 5
+    labels:
+      - "dependencies"
+    groups:
+      github-actions:
+        patterns:
+          - "*"
 
 # 注意事项：
 # 1. Dependabot 会自动处理 GitHub Advisory 数据库中的安全修复
@@ -69,4 +77,3 @@ updates:
 # 3. 路径：Settings -> Security -> Code security and analysis
 # 4. 安全更新的 PR 会被标记为 "security" 优先级
 # 5. 可以手动触发更新：在 Insights -> Dependency graph -> Dependabot 中点击 "Check for updates"
-
