@@ -12,10 +12,12 @@ class PluginManagerTheme {
     }
 
     Color statusBackground(Color color) {
-        return ModernColors.withAlpha(color, 64);
+        Color surface = ModernColors.getDialogChromeBackgroundColor();
+        return ModernColors.blendColors(surface, color, ModernColors.isDarkTheme() ? 0.18f : 0.12f);
     }
 
-    Color statusForeground() {
-        return ModernColors.getTextPrimary();
+    Color statusForeground(Color color) {
+        Color text = ModernColors.getTextPrimary();
+        return ModernColors.blendColors(text, color, ModernColors.isDarkTheme() ? 0.55f : 0.65f);
     }
 }

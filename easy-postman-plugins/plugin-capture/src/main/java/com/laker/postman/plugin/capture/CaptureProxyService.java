@@ -7,7 +7,13 @@ import io.netty.channel.ChannelOption;
 import io.netty.channel.EventLoopGroup;
 import io.netty.channel.nio.NioEventLoopGroup;
 import io.netty.channel.socket.nio.NioServerSocketChannel;
+import lombok.extern.slf4j.Slf4j;
 
+import java.util.concurrent.Executors;
+import java.util.concurrent.ScheduledExecutorService;
+import java.util.concurrent.TimeUnit;
+
+@Slf4j
 final class CaptureProxyService {
     private final CaptureSessionStore sessionStore = new CaptureSessionStore();
     private final SystemProxyService systemProxyService = new SystemProxyService();
@@ -17,6 +23,7 @@ final class CaptureProxyService {
     private volatile EventLoopGroup bossGroup;
     private volatile EventLoopGroup workerGroup;
     private volatile Channel serverChannel;
+    private ScheduledExecutorService systemProxyMonitor;
     private volatile String listenHost = "127.0.0.1";
     private volatile int listenPort = 8888;
     private volatile boolean syncSystemProxy;
@@ -54,20 +61,35 @@ final class CaptureProxyService {
             serverChannel = bootstrap.bind(listenHost, listenPort).sync().channel();
             if (syncSystemProxy) {
                 systemProxyService.enable(listenHost, listenPort);
+                startSystemProxyMonitor();
             }
+            log.info("Capture proxy started: pid={}, listen={}:{}, syncSystemProxy={}, systemProxyHealthy={}",
+                    ProcessHandle.current().pid(), listenHost, listenPort,
+                    syncSystemProxy, systemProxyService.isEffectivelySynced());
         } catch (Exception ex) {
-            stop();
+            log.error("Failed to start capture proxy at {}:{} (syncSystemProxy={})",
+                    listenHost, listenPort, syncSystemProxy, ex);
+            try {
+                stop();
+            } catch (RuntimeException cleanupError) {
+                ex.addSuppressed(cleanupError);
+                log.error("Failed to clean up capture proxy after startup failure at {}:{}",
+                        listenHost, listenPort, cleanupError);
+            }
             throw ex;
         }
     }
 
     synchronized void stop() {
+        boolean wasRunning = isRunning();
+        stopSystemProxyMonitor();
         RuntimeException restoreError = null;
         try {
             if (systemProxyService.isActive()) {
                 systemProxyService.disable();
             }
         } catch (Exception ex) {
+            log.error("Failed to restore system proxy while stopping capture proxy", ex);
             restoreError = new IllegalStateException("Failed to restore system proxy: " + ex.getMessage(), ex);
         } finally {
             syncSystemProxy = false;
@@ -87,6 +109,10 @@ final class CaptureProxyService {
         }
         if (restoreError != null) {
             throw restoreError;
+        }
+        if (wasRunning) {
+            log.info("Capture proxy stopped: pid={}, listen={}:{}",
+                    ProcessHandle.current().pid(), listenHost, listenPort);
         }
     }
 
@@ -115,6 +141,10 @@ final class CaptureProxyService {
         return systemProxyService.isActive();
     }
 
+    boolean isSystemProxyHealthy() {
+        return systemProxyService.isEffectivelySynced();
+    }
+
     boolean syncSystemProxy() {
         return syncSystemProxy;
     }
@@ -129,6 +159,38 @@ final class CaptureProxyService {
 
     void updateCaptureFilter(String rawValue) {
         captureFilterState.update(rawValue);
+    }
+
+    private void startSystemProxyMonitor() {
+        systemProxyMonitor = Executors.newSingleThreadScheduledExecutor(task -> {
+            Thread thread = new Thread(task, "capture-system-proxy-monitor");
+            thread.setDaemon(true);
+            return thread;
+        });
+        systemProxyMonitor.scheduleWithFixedDelay(this::checkSystemProxy, 5, 5, TimeUnit.SECONDS);
+    }
+
+    private synchronized void checkSystemProxy() {
+        if (!isRunning() || !syncSystemProxy || !systemProxyService.isActive()) {
+            return;
+        }
+        try {
+            if (systemProxyService.ensureSynced()) {
+                log.warn("System proxy was changed while capture was running; restored {}:{}",
+                        listenHost, listenPort);
+            }
+        } catch (Exception ex) {
+            log.warn("System proxy is no longer synced to the running capture proxy at {}:{}",
+                    listenHost, listenPort, ex);
+        }
+    }
+
+    private void stopSystemProxyMonitor() {
+        ScheduledExecutorService monitor = systemProxyMonitor;
+        systemProxyMonitor = null;
+        if (monitor != null) {
+            monitor.shutdownNow();
+        }
     }
 
     private CaptureCertificateService certificateService() {

@@ -7,6 +7,7 @@ import com.laker.postman.common.component.SearchableTextArea;
 import com.laker.postman.common.component.ToolWindowChrome;
 import com.laker.postman.common.component.ToolWindowSurfaceStyle;
 import com.laker.postman.common.component.button.CopyButton;
+import com.laker.postman.common.component.button.ModernButtonFactory;
 import com.laker.postman.common.component.table.EnhancedTablePanel;
 import com.laker.postman.common.constants.ModernColors;
 import com.laker.postman.plugin.api.PluginStorage;
@@ -44,6 +45,7 @@ import javax.swing.ListSelectionModel;
 import javax.swing.SpinnerNumberModel;
 import javax.swing.SwingConstants;
 import javax.swing.SwingUtilities;
+import javax.swing.Timer;
 import javax.swing.SwingWorker;
 import javax.swing.event.DocumentEvent;
 import javax.swing.event.DocumentListener;
@@ -146,7 +148,7 @@ public class CapturePanel extends JPanel {
     private boolean syncingQuickFilters;
     private boolean operationInProgress;
     private CaptureFlow selectedFlow;
-    private Timer refreshTimer;
+    private final CaptureRefreshScheduler refreshScheduler = new CaptureRefreshScheduler(this::refreshTable);
     private int totalFlowCount;
     private int visibleFlowCount;
     private volatile CaptureStatusSnapshot captureStatusSnapshot = checkingStatusSnapshot();
@@ -168,6 +170,12 @@ public class CapturePanel extends JPanel {
         refreshTable();
         updateStatus();
         refreshCaptureStatusAsync(false);
+        Timer proxyStatusTimer = new Timer(5_000, e -> {
+            if (proxyService.isRunning() && proxyService.syncSystemProxy()) {
+                updateCaptureStatusLabel();
+            }
+        });
+        proxyStatusTimer.start();
     }
 
     private void initUI() {
@@ -182,8 +190,8 @@ public class CapturePanel extends JPanel {
 
     private JComponent buildTopBar() {
         JPanel panel = new JPanel(new MigLayout(
-                "insets 8, fillx, novisualpadding",
-                "[][220!]8[104!]10[]12[]6[]4[82!]push[]",
+                "insets 8 10 8 10, fillx, novisualpadding, gapy 4",
+                "[][220!]8[96!]12[]8[]12[]6[82!]push[]",
                 "[][][][]"));
         ToolWindowSurfaceStyle.applySectionHeader(panel, 0, 0, 8, 0);
 
@@ -191,17 +199,22 @@ public class CapturePanel extends JPanel {
         hostField.setColumns(16);
         hostField.putClientProperty(FlatClientProperties.PLACEHOLDER_TEXT,
                 t(MessageKeys.TOOLBOX_CAPTURE_BIND_HOST_PLACEHOLDER));
+        hostField.getAccessibleContext().setAccessibleName(
+                t(MessageKeys.TOOLBOX_CAPTURE_BIND) + " " + t(MessageKeys.TOOLBOX_CAPTURE_BIND_HOST_PLACEHOLDER));
         portSpinner = new JSpinner(new SpinnerNumberModel(defaultPort(), 1, 65535, 1));
         configurePortSpinner();
+        portSpinner.getAccessibleContext().setAccessibleName(t(MessageKeys.TOOLBOX_CAPTURE_BIND));
         retentionLimitComboBox = new JComboBox<>(RETENTION_LIMIT_OPTIONS);
         retentionLimitComboBox.setSelectedItem(defaultMaxFlows());
         retentionLimitComboBox.setFocusable(false);
         retentionLimitComboBox.setToolTipText(t(MessageKeys.TOOLBOX_CAPTURE_RETENTION_TOOLTIP));
+        retentionLimitComboBox.getAccessibleContext().setAccessibleName(t(MessageKeys.TOOLBOX_CAPTURE_RETENTION));
         captureFilterField = new JTextField(defaultCaptureFilter());
         captureFilterField.setColumns(28);
         captureFilterField.putClientProperty(FlatClientProperties.PLACEHOLDER_TEXT,
                 t(MessageKeys.TOOLBOX_CAPTURE_HOSTS_PLACEHOLDER));
         captureFilterField.setToolTipText(htmlTooltip(t(MessageKeys.TOOLBOX_CAPTURE_HOSTS_TOOLTIP), 420));
+        captureFilterField.getAccessibleContext().setAccessibleName(t(MessageKeys.TOOLBOX_CAPTURE_CAPTURE_HOSTS));
         captureFilterField.getDocument().addDocumentListener(new DocumentListener() {
             @Override
             public void insertUpdate(DocumentEvent e) {
@@ -219,9 +232,25 @@ public class CapturePanel extends JPanel {
             }
         });
 
-        toggleProxyButton = new JButton();
-        clearButton = new JButton(t(MessageKeys.TOOLBOX_CAPTURE_CLEAR), IconUtil.createThemed("icons/clear.svg", 16, 16));
+        toggleProxyButton = ModernButtonFactory.createButton(
+                t(MessageKeys.TOOLBOX_CAPTURE_START),
+                true,
+                "icons/start.svg"
+        );
+        toggleProxyButton.setPreferredSize(new Dimension(112, 34));
+        toggleProxyButton.setMinimumSize(new Dimension(112, 34));
+        toggleProxyButton.setToolTipText(t(MessageKeys.TOOLBOX_CAPTURE_START));
+        toggleProxyButton.getAccessibleContext().setAccessibleName(t(MessageKeys.TOOLBOX_CAPTURE_START));
+        clearButton = ModernButtonFactory.createCompactButton(
+                t(MessageKeys.TOOLBOX_CAPTURE_CLEAR),
+                false,
+                "icons/clear.svg"
+        );
+        clearButton.setToolTipText(t(MessageKeys.TOOLBOX_CAPTURE_CLEAR));
+        clearButton.getAccessibleContext().setAccessibleName(t(MessageKeys.TOOLBOX_CAPTURE_CLEAR));
         syncSystemProxyCheckBox = new JCheckBox(t(MessageKeys.TOOLBOX_CAPTURE_SYNC_MACOS_PROXY), defaultSyncSystemProxy());
+        syncSystemProxyCheckBox.getAccessibleContext().setAccessibleName(
+                t(MessageKeys.TOOLBOX_CAPTURE_SYNC_MACOS_PROXY));
         initStatusPopupMenu();
 
         toggleProxyButton.addActionListener(e -> {
@@ -242,6 +271,7 @@ public class CapturePanel extends JPanel {
         captureStatusPanel = new JPanel(new MigLayout("insets 0, gapx 8, novisualpadding", "[][]", "[]"));
         captureStatusPanel.setOpaque(false);
         captureStatusPanel.setBorder(new EmptyBorder(0, 8, 0, 0));
+        captureStatusPanel.setToolTipText(t(MessageKeys.TOOLBOX_CAPTURE_STATUS_DETAILS));
         captureStatusPanel.setCursor(Cursor.getPredefinedCursor(Cursor.HAND_CURSOR));
         captureStatusPanel.add(captureTrustStatusIcon);
         captureStatusPanel.add(captureProxyStatusIcon);
@@ -257,7 +287,7 @@ public class CapturePanel extends JPanel {
         panel.add(new JLabel(t(MessageKeys.TOOLBOX_CAPTURE_BIND)), "gapright 8");
         panel.add(hostField, "growx");
         panel.add(portSpinner, "growx");
-        panel.add(toggleProxyButton, "gapleft 2, wmin 110");
+        panel.add(toggleProxyButton, "gapleft 2, wmin 112");
         panel.add(clearButton);
         panel.add(new JLabel(t(MessageKeys.TOOLBOX_CAPTURE_RETENTION)), "gapleft 4");
         panel.add(retentionLimitComboBox, "wmin 82");
@@ -524,13 +554,7 @@ public class CapturePanel extends JPanel {
     }
 
     private void scheduleRefreshTable() {
-        SwingUtilities.invokeLater(() -> {
-            if (refreshTimer == null) {
-                refreshTimer = new Timer(120, e -> refreshTable());
-                refreshTimer.setRepeats(false);
-            }
-            refreshTimer.restart();
-        });
+        refreshScheduler.requestRefresh();
     }
 
     private void refreshTable() {
@@ -540,6 +564,7 @@ public class CapturePanel extends JPanel {
         List<CaptureFlow> visibleFlows = visibleFlows(snapshot);
         totalFlowCount = snapshot.size();
         visibleFlowCount = visibleFlows.size();
+        updateClearButtonState();
         List<Object[]> rows = new ArrayList<>();
         for (CaptureFlow flow : visibleFlows) {
             rows.add(flow.toRow());
@@ -619,8 +644,7 @@ public class CapturePanel extends JPanel {
                 && CaptureFlowClassifier.isTelemetry(flow)) {
             return false;
         }
-        return !activeViewPresets.contains(CaptureViewPreset.API_ONLY)
-                || CaptureFlowClassifier.isApiTraffic(flow);
+        return true;
     }
 
     static boolean matchesSourceDisplayFilter(CaptureFlow flow, String includeSource, String excludeSource) {
@@ -965,7 +989,7 @@ public class CapturePanel extends JPanel {
         boolean running = proxyService.isRunning();
         boolean busy = operationInProgress;
         updateToggleProxyButton(running, busy);
-        clearButton.setEnabled(!busy);
+        updateClearButtonState();
         hostField.setEnabled(!busy && !running);
         portSpinner.setEnabled(!busy && !running);
         captureFilterField.setEnabled(!busy);
@@ -991,6 +1015,12 @@ public class CapturePanel extends JPanel {
         }
 
         updateCertificateActions(certificateInstallSupported, busy);
+    }
+
+    private void updateClearButtonState() {
+        if (clearButton != null) {
+            clearButton.setEnabled(!operationInProgress && totalFlowCount > 0);
+        }
     }
 
     private void updateCertificateActions(boolean certificateInstallSupported, boolean busy) {
@@ -1087,7 +1117,6 @@ public class CapturePanel extends JPanel {
         addQuickFilterButton(panel, "image", t(MessageKeys.TOOLBOX_CAPTURE_QUICK_FILTER_IMAGE));
         addQuickFilterButton(panel, "js", t(MessageKeys.TOOLBOX_CAPTURE_QUICK_FILTER_JS));
         addQuickFilterButton(panel, "css", t(MessageKeys.TOOLBOX_CAPTURE_QUICK_FILTER_CSS));
-        addQuickFilterButton(panel, "api", t(MessageKeys.TOOLBOX_CAPTURE_QUICK_FILTER_API));
         addQuickFilterButton(panel, "sse", t(MessageKeys.TOOLBOX_CAPTURE_QUICK_FILTER_SSE));
         addQuickFilterButton(panel, "websocket", t(MessageKeys.TOOLBOX_CAPTURE_QUICK_FILTER_WS));
         return panel;
@@ -1100,7 +1129,6 @@ public class CapturePanel extends JPanel {
         addViewPresetButton(panel, CaptureViewPreset.SLOW_ONLY, t(MessageKeys.TOOLBOX_CAPTURE_VIEW_FILTER_SLOW));
         addViewPresetButton(panel, CaptureViewPreset.HIDE_STATIC, t(MessageKeys.TOOLBOX_CAPTURE_VIEW_FILTER_HIDE_STATIC));
         addViewPresetButton(panel, CaptureViewPreset.HIDE_TELEMETRY, t(MessageKeys.TOOLBOX_CAPTURE_VIEW_FILTER_HIDE_TELEMETRY));
-        addViewPresetButton(panel, CaptureViewPreset.API_ONLY, t(MessageKeys.TOOLBOX_CAPTURE_VIEW_FILTER_API_ONLY));
         addViewPresetButton(panel, CaptureViewPreset.ERROR_PRIORITY, t(MessageKeys.TOOLBOX_CAPTURE_VIEW_FILTER_ERROR_PRIORITY));
         return panel;
     }
@@ -1294,6 +1322,9 @@ public class CapturePanel extends JPanel {
             return t(MessageKeys.TOOLBOX_CAPTURE_SYSTEM_PROXY_UNSUPPORTED);
         }
         if (proxyService.isSystemProxySynced()) {
+            if (!proxyService.isSystemProxyHealthy()) {
+                return t(MessageKeys.TOOLBOX_CAPTURE_SYSTEM_PROXY_LOST);
+            }
             return proxyService.systemProxyStatus();
         }
         if (!proxyService.isRunning() && syncSystemProxyCheckBox != null && syncSystemProxyCheckBox.isSelected()) {
@@ -1404,7 +1435,9 @@ public class CapturePanel extends JPanel {
             return ModernColors.getNeutral();
         }
         if (proxyService.isSystemProxySynced()) {
-            return ModernColors.getInfo();
+            return proxyService.isSystemProxyHealthy()
+                    ? ModernColors.getInfo()
+                    : ModernColors.getWarningDark();
         }
         if (!proxyService.isRunning() && syncSystemProxyCheckBox != null && syncSystemProxyCheckBox.isSelected()) {
             return ModernColors.getWarningDark();
@@ -2349,7 +2382,6 @@ public class CapturePanel extends JPanel {
             case SLOW_ONLY -> t(MessageKeys.TOOLBOX_CAPTURE_VIEW_FILTER_SLOW);
             case HIDE_STATIC -> t(MessageKeys.TOOLBOX_CAPTURE_VIEW_FILTER_HIDE_STATIC);
             case HIDE_TELEMETRY -> t(MessageKeys.TOOLBOX_CAPTURE_VIEW_FILTER_HIDE_TELEMETRY);
-            case API_ONLY -> t(MessageKeys.TOOLBOX_CAPTURE_VIEW_FILTER_API_ONLY);
             case ERROR_PRIORITY -> t(MessageKeys.TOOLBOX_CAPTURE_VIEW_FILTER_ERROR_PRIORITY);
         };
     }
@@ -2359,7 +2391,6 @@ public class CapturePanel extends JPanel {
         SLOW_ONLY,
         HIDE_STATIC,
         HIDE_TELEMETRY,
-        API_ONLY,
         ERROR_PRIORITY
     }
 
@@ -2567,13 +2598,17 @@ public class CapturePanel extends JPanel {
     }
 
     private void updateToggleProxyButton(boolean running, boolean busy) {
+        toggleProxyButton.putClientProperty(
+                FlatClientProperties.STYLE_CLASS,
+                running ? "easyPostmanSecondary" : "easyPostmanPrimary"
+        );
         if (busy) {
             if (running) {
                 toggleProxyButton.setText(t(MessageKeys.TOOLBOX_CAPTURE_STOPPING));
                 toggleProxyButton.setIcon(IconUtil.createThemed("icons/stop.svg", 16, 16));
             } else {
                 toggleProxyButton.setText(t(MessageKeys.TOOLBOX_CAPTURE_STARTING));
-                toggleProxyButton.setIcon(IconUtil.createThemed("icons/start.svg", 16, 16));
+                toggleProxyButton.setIcon(IconUtil.createOnPrimary("icons/start.svg", 16, 16));
             }
             toggleProxyButton.setEnabled(false);
             return;
@@ -2583,8 +2618,12 @@ public class CapturePanel extends JPanel {
             toggleProxyButton.setIcon(IconUtil.createThemed("icons/stop.svg", 16, 16));
         } else {
             toggleProxyButton.setText(t(MessageKeys.TOOLBOX_CAPTURE_START));
-            toggleProxyButton.setIcon(IconUtil.createThemed("icons/start.svg", 16, 16));
+            toggleProxyButton.setIcon(IconUtil.createOnPrimary("icons/start.svg", 16, 16));
         }
+        toggleProxyButton.setToolTipText(t(running
+                ? MessageKeys.TOOLBOX_CAPTURE_STOP
+                : MessageKeys.TOOLBOX_CAPTURE_START));
+        toggleProxyButton.getAccessibleContext().setAccessibleName(toggleProxyButton.getText());
         toggleProxyButton.setEnabled(true);
     }
 }

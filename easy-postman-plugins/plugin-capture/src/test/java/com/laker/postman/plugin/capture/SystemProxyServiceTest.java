@@ -1,6 +1,7 @@
 package com.laker.postman.plugin.capture;
 
 import com.laker.postman.plugin.api.PluginStorage;
+import com.laker.postman.util.JsonUtil;
 import org.testng.annotations.Test;
 
 import java.io.IOException;
@@ -128,6 +129,7 @@ public class SystemProxyServiceTest {
         original.enable("127.0.0.1", 8888);
 
         assertTrue(storage.files.containsKey(SystemProxyService.RECOVERY_STORAGE_FILE));
+        setSnapshotOwnerProcess(storage, Long.MAX_VALUE, 0L);
 
         WindowsRegistryCommandRunner recoveryRunner = new WindowsRegistryCommandRunner(Map.of(
                 "ProxyEnable", new RegistryValue("REG_DWORD", "0x1"),
@@ -158,6 +160,7 @@ public class SystemProxyServiceTest {
         SystemProxyService original = new SystemProxyService(new WindowsRegistryCommandRunner(), "Windows 11", false);
         original.configureStorage(storage);
         original.enable("127.0.0.1", 8888);
+        setSnapshotOwnerProcess(storage, Long.MAX_VALUE, 0L);
 
         WindowsRegistryCommandRunner recoveryRunner = new WindowsRegistryCommandRunner(Map.of(
                 "ProxyEnable", new RegistryValue("REG_DWORD", "0x1"),
@@ -178,10 +181,179 @@ public class SystemProxyServiceTest {
                 "Recovery should not restore a snapshot after the user changes the system proxy");
     }
 
+    @Test
+    public void shouldUseDocumentedMacProxyArguments() throws Exception {
+        MacNetworkSetupCommandRunner runner = new MacNetworkSetupCommandRunner(false);
+        SystemProxyService service = new SystemProxyService(runner, "macOS 26", false);
+
+        service.enable("127.0.0.1", 8888);
+
+        assertTrue(runner.commands().contains(List.of(
+                "/usr/sbin/networksetup", "-setwebproxy", "Wi-Fi", "127.0.0.1", "8888", "off", "", ""
+        )));
+        assertTrue(runner.commands().contains(List.of(
+                "/usr/sbin/networksetup", "-setsecurewebproxy", "Wi-Fi", "127.0.0.1", "8888", "off", "", ""
+        )));
+    }
+
+    @Test
+    public void shouldFallbackToLegacyMacProxyArgumentsWhenNeeded() throws Exception {
+        MacNetworkSetupCommandRunner runner = new MacNetworkSetupCommandRunner(true);
+        SystemProxyService service = new SystemProxyService(runner, "macOS 12", false);
+
+        service.enable("127.0.0.1", 8888);
+
+        assertTrue(runner.commands().contains(List.of(
+                "/usr/sbin/networksetup", "-setwebproxy", "Wi-Fi", "127.0.0.1", "8888"
+        )));
+        assertTrue(runner.commands().contains(List.of(
+                "/usr/sbin/networksetup", "-setsecurewebproxy", "Wi-Fi", "127.0.0.1", "8888"
+        )));
+    }
+
+    @Test
+    public void shouldRepairMacProxyWhenEffectiveSettingsAreReplacedWhileCaptureRuns() throws Exception {
+        MacNetworkSetupCommandRunner runner = new MacNetworkSetupCommandRunner(false);
+        SystemProxyService service = new SystemProxyService(runner, "macOS 26", false);
+        service.enable("127.0.0.1", 8888);
+
+        runner.replaceProxyExternally();
+
+        assertTrue(service.ensureSynced());
+        assertTrue(service.isEffectivelySynced());
+        assertFalse(service.ensureSynced(), "A healthy proxy must not be reapplied on every check");
+        assertTrue(runner.commands().stream().filter(command -> command.size() > 1
+                        && "-setsecurewebproxystate".equals(command.get(1))
+                        && "on".equals(command.get(3))).count() >= 2);
+    }
+
+    @Test
+    public void shouldReportLostSyncWhenMacProxyCannotBeRestored() throws Exception {
+        MacNetworkSetupCommandRunner runner = new MacNetworkSetupCommandRunner(false);
+        SystemProxyService service = new SystemProxyService(runner, "macOS 26", false);
+        service.enable("127.0.0.1", 8888);
+        runner.replaceProxyExternally();
+        runner.blockUpdates = true;
+
+        expectThrows(IllegalStateException.class, service::ensureSynced);
+
+        assertFalse(service.isEffectivelySynced());
+    }
+
+    @Test
+    public void shouldRestoreOriginalMacProxyAfterPartialEnableFailure() throws Exception {
+        MemoryPluginStorage storage = new MemoryPluginStorage();
+        MacNetworkSetupCommandRunner runner = new MacNetworkSetupCommandRunner(false);
+        runner.failNextSecureProxyEnable = true;
+        SystemProxyService service = new SystemProxyService(runner, "macOS 26", false);
+        service.configureStorage(storage);
+
+        expectThrows(IllegalStateException.class, () -> service.enable("127.0.0.1", 8888));
+
+        assertFalse(service.isActive());
+        assertFalse(runner.webProxyEnabled);
+        assertFalse(runner.secureProxyEnabled);
+        assertTrue(runner.proxyPort == 9000);
+        assertFalse(storage.files.containsKey(SystemProxyService.RECOVERY_STORAGE_FILE));
+    }
+
+    @Test
+    public void shouldNotRestoreProxyOwnedByAnotherCaptureInstance() throws Exception {
+        MemoryPluginStorage storage = new MemoryPluginStorage();
+        MacNetworkSetupCommandRunner runner = new MacNetworkSetupCommandRunner(false);
+        SystemProxyService older = new SystemProxyService(runner, "macOS 26", false);
+        SystemProxyService newer = new SystemProxyService(runner, "macOS 26", false);
+        older.configureStorage(storage);
+        newer.configureStorage(storage);
+        older.enable("127.0.0.1", 8888);
+        newer.enable("127.0.0.1", 8888);
+        int commandCount = runner.commands().size();
+
+        expectThrows(IllegalStateException.class, older::ensureSynced);
+        older.disable();
+
+        assertFalse(older.isActive());
+        assertFalse(older.isEffectivelySynced());
+        assertTrue(newer.isActive());
+        assertTrue(storage.files.containsKey(SystemProxyService.RECOVERY_STORAGE_FILE));
+        assertTrue(runner.commands().size() == commandCount,
+                "The older instance must not change settings owned by the newer instance");
+    }
+
+    @Test
+    public void shouldLeaveProxyUntouchedWhenSnapshotOwnerProcessIsStillAlive() throws Exception {
+        MemoryPluginStorage storage = new MemoryPluginStorage();
+        MacNetworkSetupCommandRunner runner = new MacNetworkSetupCommandRunner(false);
+        SystemProxyService owner = new SystemProxyService(runner, "macOS 26", false);
+        owner.configureStorage(storage);
+        owner.enable("127.0.0.1", 8888);
+        int commandCount = runner.commands().size();
+
+        SystemProxyService otherProcess = new SystemProxyService(runner, "macOS 26", false);
+        otherProcess.configureStorage(storage);
+        SystemProxyService.SystemProxyRecoveryResult result = otherProcess.restorePersistedSnapshotIfOwned();
+
+        assertFalse(result.attempted());
+        assertFalse(result.restored());
+        assertTrue(runner.webProxyEnabled);
+        assertTrue(runner.secureProxyEnabled);
+        assertTrue(storage.files.containsKey(SystemProxyService.RECOVERY_STORAGE_FILE));
+        assertTrue(runner.commands().size() == commandCount,
+                "A second process must not query or restore a live capture owner's system proxy");
+    }
+
+    @Test
+    public void shouldRecoverWhenSnapshotPidWasReusedByAnotherProcess() throws Exception {
+        MemoryPluginStorage storage = new MemoryPluginStorage();
+        MacNetworkSetupCommandRunner runner = new MacNetworkSetupCommandRunner(false);
+        SystemProxyService owner = new SystemProxyService(runner, "macOS 26", false);
+        owner.configureStorage(storage);
+        owner.enable("127.0.0.1", 8888);
+        long startedAt = ProcessHandle.current().info().startInstant()
+                .orElseThrow().toEpochMilli();
+        setSnapshotOwnerProcess(storage, ProcessHandle.current().pid(), startedAt - 1);
+
+        SystemProxyService recovered = new SystemProxyService(runner, "macOS 26", false);
+        recovered.configureStorage(storage);
+        SystemProxyService.SystemProxyRecoveryResult result = recovered.restorePersistedSnapshotIfOwned();
+
+        assertTrue(result.restored());
+        assertFalse(runner.webProxyEnabled);
+        assertFalse(runner.secureProxyEnabled);
+    }
+
+    @Test
+    public void shouldNotDeleteAnotherInstanceSnapshotWhenInactiveInstanceShutsDown() throws Exception {
+        MemoryPluginStorage storage = new MemoryPluginStorage();
+        MacNetworkSetupCommandRunner runner = new MacNetworkSetupCommandRunner(false);
+        SystemProxyService inactive = new SystemProxyService(runner, "macOS 26", false);
+        SystemProxyService running = new SystemProxyService(runner, "macOS 26", false);
+        inactive.configureStorage(storage);
+        running.configureStorage(storage);
+        running.enable("127.0.0.1", 8888);
+        Method restoreQuietly = SystemProxyService.class.getDeclaredMethod("restoreQuietly");
+        restoreQuietly.setAccessible(true);
+
+        restoreQuietly.invoke(inactive);
+
+        assertTrue(storage.files.containsKey(SystemProxyService.RECOVERY_STORAGE_FILE));
+        assertTrue(running.isActive());
+    }
+
     private static boolean readBooleanField(Object target, String fieldName) throws Exception {
         Field field = target.getClass().getDeclaredField(fieldName);
         field.setAccessible(true);
         return field.getBoolean(target);
+    }
+
+    @SuppressWarnings("unchecked")
+    private static void setSnapshotOwnerProcess(MemoryPluginStorage storage, long pid, long startedAt) {
+        String json = storage.files.get(SystemProxyService.RECOVERY_STORAGE_FILE);
+        Map<String, Object> snapshot = new HashMap<>(
+                JsonUtil.convertValue(JsonUtil.readTree(json), Map.class));
+        snapshot.put("ownerPid", pid);
+        snapshot.put("ownerStartedAt", startedAt);
+        storage.files.put(SystemProxyService.RECOVERY_STORAGE_FILE, JsonUtil.toJsonPrettyStr(snapshot));
     }
 
     private static Object readObjectField(Object target, String fieldName) throws Exception {
@@ -292,6 +464,91 @@ public class SystemProxyServiceTest {
         private String valueAfter(List<String> command, String flag) {
             int index = command.indexOf(flag);
             return index >= 0 && index + 1 < command.size() ? command.get(index + 1) : "";
+        }
+    }
+
+    private static final class MacNetworkSetupCommandRunner implements SystemProxyService.CommandRunner {
+        private final List<List<String>> commands = new ArrayList<>();
+        private final boolean rejectDocumentedProxyArguments;
+        private boolean webProxyEnabled;
+        private boolean secureProxyEnabled;
+        private int proxyPort = 9000;
+        private boolean blockUpdates;
+        private boolean failNextSecureProxyEnable;
+
+        private MacNetworkSetupCommandRunner(boolean rejectDocumentedProxyArguments) {
+            this.rejectDocumentedProxyArguments = rejectDocumentedProxyArguments;
+        }
+
+        private List<List<String>> commands() {
+            return commands;
+        }
+
+        private void replaceProxyExternally() {
+            webProxyEnabled = false;
+            secureProxyEnabled = false;
+            proxyPort = 9000;
+        }
+
+        @Override
+        public SystemProxyService.CommandResult run(List<String> command) {
+            commands.add(command);
+            if ("/usr/sbin/scutil".equals(command.get(0))) {
+                return new SystemProxyService.CommandResult(0, List.of(
+                        "HTTPEnable : " + (webProxyEnabled ? 1 : 0),
+                        "HTTPSEnable : " + (secureProxyEnabled ? 1 : 0),
+                        "HTTPProxy : 127.0.0.1",
+                        "HTTPSProxy : 127.0.0.1",
+                        "HTTPPort : " + proxyPort,
+                        "HTTPSPort : " + proxyPort,
+                        "ProxyAutoConfigEnable : 0",
+                        "ProxyAutoDiscoveryEnable : 0"
+                ));
+            }
+            String operation = command.size() > 1 ? command.get(1) : "";
+            if (failNextSecureProxyEnable && "-setsecurewebproxystate".equals(operation)
+                    && "on".equals(command.get(3))) {
+                failNextSecureProxyEnable = false;
+                return new SystemProxyService.CommandResult(1, List.of("Temporary failure"));
+            }
+            if (blockUpdates && operation.startsWith("-set")) {
+                return new SystemProxyService.CommandResult(1, List.of("Permission denied"));
+            }
+            if ("-listallnetworkservices".equals(operation)) {
+                return new SystemProxyService.CommandResult(0, List.of(
+                        "An asterisk (*) denotes that a network service is disabled.", "Wi-Fi"
+                ));
+            }
+            if ("-getwebproxy".equals(operation) || "-getsecurewebproxy".equals(operation)) {
+                boolean enabled = "-getsecurewebproxy".equals(operation) ? secureProxyEnabled : webProxyEnabled;
+                return new SystemProxyService.CommandResult(0, List.of(
+                        "Enabled: " + (enabled ? "Yes" : "No"), "Server: 127.0.0.1", "Port: " + proxyPort));
+            }
+            if ("-getproxyautodiscovery".equals(operation)) {
+                return new SystemProxyService.CommandResult(0, List.of("Auto Proxy Discovery: Off"));
+            }
+            if ("-getautoproxyurl".equals(operation)) {
+                return new SystemProxyService.CommandResult(0, List.of("Enabled: No", "URL: "));
+            }
+            if ("-getproxybypassdomains".equals(operation)) {
+                return new SystemProxyService.CommandResult(0, List.of(
+                        "There aren't any bypass domains set on Wi-Fi."
+                ));
+            }
+            if (("-setwebproxy".equals(operation) || "-setsecurewebproxy".equals(operation))
+                    && rejectDocumentedProxyArguments && command.size() == 8) {
+                return new SystemProxyService.CommandResult(1, List.of("** Error: The parameters were not valid."));
+            }
+            if ("-setwebproxy".equals(operation) || "-setsecurewebproxy".equals(operation)) {
+                proxyPort = Integer.parseInt(command.get(4));
+            }
+            if ("-setwebproxystate".equals(operation)) {
+                webProxyEnabled = "on".equals(command.get(3));
+            }
+            if ("-setsecurewebproxystate".equals(operation)) {
+                secureProxyEnabled = "on".equals(command.get(3));
+            }
+            return new SystemProxyService.CommandResult(0, List.of());
         }
     }
 }

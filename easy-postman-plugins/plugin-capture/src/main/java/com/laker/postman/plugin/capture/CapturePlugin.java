@@ -16,7 +16,11 @@ public class CapturePlugin implements EasyPostmanPlugin {
     @Override
     public void onLoad(PluginContext context) {
         context.registerI18nBundle(CaptureI18n.BUNDLE_NAME);
-        configureProxyRecovery(context);
+        // CLI/MCP/worker processes load plugins for their script extensions, but do not own
+        // the desktop capture session or its system proxy settings.
+        if (!Boolean.getBoolean("java.awt.headless")) {
+            configureProxyRecovery(context);
+        }
         RequestCollectionImportService importService = context.getService(RequestCollectionImportService.class);
         PluginContributionSupport.registerToolbox(
                 context,

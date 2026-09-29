@@ -1416,7 +1416,7 @@ public class PluginManagerDialog extends JDialog {
                 || text.contains(I18nUtil.getMessage(MessageKeys.PLUGIN_MANAGER_STATUS_DISABLE_PENDING))
                 || text.contains(I18nUtil.getMessage(MessageKeys.PLUGIN_MANAGER_STATUS_RESTART_REQUIRED))
                 || matchesStatusPattern(text, MessageKeys.PLUGIN_MANAGER_MARKET_UPDATE_AVAILABLE)) {
-            return new StatusPalette(PluginManagerTheme.statusBackground(ModernColors.getWarning()), PluginManagerTheme.statusForeground());
+            return statusPalette(ModernColors.getWarning(), ModernColors.getWarningDark());
         }
         if (text.contains(I18nUtil.getMessage(MessageKeys.PLUGIN_MANAGER_STATUS_DISABLED))
                 || text.contains(I18nUtil.getMessage(MessageKeys.PLUGIN_MANAGER_STATUS_INCOMPATIBLE))
@@ -1424,12 +1424,18 @@ public class PluginManagerDialog extends JDialog {
                 || text.contains(I18nUtil.getMessage(MessageKeys.PLUGIN_MANAGER_COMPATIBILITY_REQUIRES_PLUGIN_UPGRADE))
                 || text.contains(I18nUtil.getMessage(MessageKeys.PLUGIN_MANAGER_MARKET_REQUIRES_HOST_UPGRADE))
                 || text.contains(I18nUtil.getMessage(MessageKeys.PLUGIN_MANAGER_MARKET_UPDATE_REQUIRES_HOST_UPGRADE))) {
-            return new StatusPalette(PluginManagerTheme.statusBackground(ModernColors.getError()), PluginManagerTheme.statusForeground());
+            return statusPalette(ModernColors.getError(), ModernColors.getErrorDark());
         }
         if (text.contains(I18nUtil.getMessage(MessageKeys.PLUGIN_MANAGER_MARKET_AVAILABLE))) {
-            return new StatusPalette(PluginManagerTheme.statusBackground(ModernColors.getPrimary()), PluginManagerTheme.statusForeground());
+            return statusPalette(ModernColors.getPrimary(), ModernColors.getPrimaryDark());
         }
-        return new StatusPalette(PluginManagerTheme.statusBackground(ModernColors.getSuccess()), PluginManagerTheme.statusForeground());
+        return statusPalette(ModernColors.getSuccess(), ModernColors.getSuccessDark());
+    }
+
+    private StatusPalette statusPalette(Color accent, Color lightAccent) {
+        Color statusAccent = ModernColors.isDarkTheme() ? accent : lightAccent;
+        return new StatusPalette(PluginManagerTheme.statusBackground(statusAccent),
+                PluginManagerTheme.statusForeground(statusAccent));
     }
 
     private static boolean matchesStatusPattern(String text, String messageKey) {

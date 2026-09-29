@@ -362,6 +362,9 @@ public final class MessageKeys {
     public static final String TAB_REQUEST_BODY = "tab.request_body";
     public static final String TAB_RESPONSE_HEADERS = "tab.response_headers";
     public static final String TAB_RESPONSE_BODY = "tab.response_body";
+    public static final String NETWORK_LOG_TAB_LOG = "network_log.tab.log";
+    public static final String NETWORK_LOG_TAB_REQUEST = "network_log.tab.request";
+    public static final String NETWORK_LOG_TAB_RESPONSE = "network_log.tab.response";
     public static final String TAB_CLOSE_OTHERS = "tab.close_others";
     public static final String TAB_CLOSE_ALL = "tab.close_all";
     public static final String TAB_CLOSE_RIGHT = "tab.close_right";
@@ -376,6 +379,38 @@ public final class MessageKeys {
     public static final String NETWORK_LOG_COPY_ACTUAL_CURL_TOOLTIP = "network_log.copy_actual_curl.tooltip";
     public static final String NETWORK_LOG_COPY_ACTUAL_CURL_SUCCESS = "network_log.copy_actual_curl.success";
     public static final String NETWORK_LOG_COPY_ACTUAL_CURL_FAIL = "network_log.copy_actual_curl.fail";
+    public static final String NETWORK_LOG_STAGE_PREFIX = "network_log.stage.";
+    public static final String NETWORK_LOG_CONTENT_TRUNCATED = "network_log.content_truncated";
+    public static final String NETWORK_LOG_LINES_OMITTED = "network_log.lines_omitted";
+    public static final String NETWORK_LOG_PHASE_DURATION = "network_log.phase_duration";
+    public static final String NETWORK_LOG_VALUE_YES = "network_log.value.yes";
+    public static final String NETWORK_LOG_VALUE_NO = "network_log.value.no";
+    public static final String NETWORK_LOG_VALUE_NONE = "network_log.value.none";
+
+    public static final String NETWORK_LOG_MESSAGE_SELECTING_PROXY = "network_log.message.selecting_proxy";
+    public static final String NETWORK_LOG_MESSAGE_PROXIES = "network_log.message.proxies";
+    public static final String NETWORK_LOG_MESSAGE_TLS_START = "network_log.message.tls_start";
+    public static final String NETWORK_LOG_MESSAGE_SSL_CONNECTION = "network_log.message.ssl_connection";
+    public static final String NETWORK_LOG_MESSAGE_SERVER_CERTIFICATE = "network_log.message.server_certificate";
+    public static final String NETWORK_LOG_MESSAGE_CERTIFICATE_SUBJECT = "network_log.message.certificate_subject";
+    public static final String NETWORK_LOG_MESSAGE_CERTIFICATE_START_DATE = "network_log.message.certificate_start_date";
+    public static final String NETWORK_LOG_MESSAGE_CERTIFICATE_EXPIRE_DATE = "network_log.message.certificate_expire_date";
+    public static final String NETWORK_LOG_MESSAGE_CERTIFICATE_ALT_NAME = "network_log.message.certificate_alt_name";
+    public static final String NETWORK_LOG_MESSAGE_CERTIFICATE_ISSUER = "network_log.message.certificate_issuer";
+    public static final String NETWORK_LOG_MESSAGE_CERTIFICATE_VERIFY_OK = "network_log.message.certificate_verify_ok";
+    public static final String NETWORK_LOG_MESSAGE_CERTIFICATE_WARNING = "network_log.message.certificate_warning";
+    public static final String NETWORK_LOG_MESSAGE_CONNECTION_ACQUIRED = "network_log.message.connection_acquired";
+    public static final String NETWORK_LOG_MESSAGE_CONNECTION_RELEASED = "network_log.message.connection_released";
+    public static final String NETWORK_LOG_MESSAGE_BYTES = "network_log.message.bytes";
+    public static final String NETWORK_LOG_MESSAGE_FOLLOW_UP = "network_log.message.follow_up";
+    public static final String NETWORK_LOG_MESSAGE_RETRY = "network_log.message.retry";
+    public static final String NETWORK_LOG_MESSAGE_REQUEST_DONE = "network_log.message.request_done";
+    public static final String NETWORK_LOG_MESSAGE_CALL_CANCELED = "network_log.message.call_canceled";
+    public static final String NETWORK_LOG_MESSAGE_CACHE_HIT = "network_log.message.cache_hit";
+    public static final String NETWORK_LOG_MESSAGE_CACHE_MISS = "network_log.message.cache_miss";
+    public static final String NETWORK_LOG_MESSAGE_CACHE_CONDITIONAL_HIT = "network_log.message.cache_conditional_hit";
+    public static final String NETWORK_LOG_MESSAGE_SATISFACTION_FAILURE = "network_log.message.satisfaction_failure";
+
 
     // ============ Bulk Edit 相关 ============
     public static final String BULK_EDIT = "bulk.edit";
@@ -1540,6 +1575,9 @@ public final class MessageKeys {
     public static final String SETTINGS_GIT_DIFF_LARGE_FILE_THRESHOLD_TOOLTIP = "settings.git.diff.large_file_threshold.tooltip";
     public static final String SETTINGS_GENERAL_AUTO_FORMAT_RESPONSE = "settings.general.auto_format_response";
     public static final String SETTINGS_GENERAL_AUTO_FORMAT_RESPONSE_TOOLTIP = "settings.general.auto_format_response.tooltip";
+    public static final String RESPONSE_BODY_AUTO_SORT_JSON_KEYS = "response.body.auto_sort_json_keys";
+    public static final String RESPONSE_BODY_AUTO_SORT_JSON_KEYS_TOOLTIP = "response.body.auto_sort_json_keys.tooltip";
+    public static final String RESPONSE_BODY_SKIP_AUTO_PROCESSING_LARGE = "response.body.skip_auto_processing_large";
     public static final String SETTINGS_GENERAL_STARTUP_SPLASH = "settings.general.startup_splash";
     public static final String SETTINGS_GENERAL_STARTUP_SPLASH_TOOLTIP = "settings.general.startup_splash.tooltip";
     public static final String SETTINGS_GENERAL_SIDEBAR_EXPANDED = "settings.general.sidebar_expanded";

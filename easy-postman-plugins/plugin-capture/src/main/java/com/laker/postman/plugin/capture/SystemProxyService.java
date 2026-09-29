@@ -15,11 +15,15 @@ import java.util.List;
 import java.util.Locale;
 import java.util.Map;
 import java.util.Optional;
+import java.util.UUID;
 
 @Slf4j
 final class SystemProxyService {
     static final String RECOVERY_STORAGE_FILE = "system-proxy-recovery.json";
     private static final String NETWORKSETUP = "/usr/sbin/networksetup";
+    private static final String SCUTIL = "/usr/sbin/scutil";
+    private static final String INVALID_PARAMETERS_MARKER = "the parameters were not valid";
+    private static final String USAGE_MARKER = "usage:";
     private static final String REG = "reg";
     private static final String CMD = "cmd";
     private static final String POWERSHELL = "powershell";
@@ -37,11 +41,13 @@ final class SystemProxyService {
     private final Thread shutdownHook;
     private final CommandRunner commandRunner;
     private final String osName;
+    private final String ownerId = UUID.randomUUID().toString();
 
     private volatile PluginStorage storage = PluginStorage.noop();
     private volatile Map<String, ProxyServiceSnapshot> snapshots = Map.of();
     private volatile WindowsProxySnapshot windowsSnapshot;
     private volatile boolean active;
+    private volatile boolean effectiveProxyHealthy;
     private volatile String activeHost = "";
     private volatile int activePort;
 
@@ -67,6 +73,10 @@ final class SystemProxyService {
         return active;
     }
 
+    boolean isEffectivelySynced() {
+        return active && effectiveProxyHealthy;
+    }
+
     void configureStorage(PluginStorage storage) {
         this.storage = storage == null ? PluginStorage.noop() : storage;
     }
@@ -85,6 +95,11 @@ final class SystemProxyService {
         }
 
         SystemProxyRecoverySnapshot snapshot = maybeSnapshot.get();
+        if (isOwnerProcessAlive(snapshot)) {
+            log.info("Skipping capture proxy recovery: owner process {} is still running", snapshot.ownerPid());
+            return new SystemProxyRecoveryResult(false, false, false,
+                    "Capture proxy is owned by running process " + snapshot.ownerPid());
+        }
         if (!isSamePlatform(snapshot.osName())) {
             deleteRecoverySnapshotQuietly();
             return new SystemProxyRecoveryResult(true, false, true, "Persisted proxy snapshot belongs to another OS");
@@ -102,6 +117,7 @@ final class SystemProxyService {
         activeHost = normalizeProxyHost(snapshot.activeHost());
         activePort = snapshot.activePort();
         active = true;
+        effectiveProxyHealthy = true;
         if (isWindows()) {
             windowsSnapshot = snapshot.windowsSnapshot();
             restoreWindowsSnapshot();
@@ -123,7 +139,7 @@ final class SystemProxyService {
             if (proxyHost.equals(activeHost) && port == activePort) {
                 return;
             }
-            restoreSnapshots();
+            disable();
         }
 
         List<String> services = listEnabledNetworkServices();
@@ -144,8 +160,12 @@ final class SystemProxyService {
             activeHost = proxyHost;
             activePort = port;
             active = true;
+            effectiveProxyHealthy = true;
         } catch (Exception ex) {
             snapshots = captured;
+            activeHost = proxyHost;
+            activePort = port;
+            active = true;
             restoreQuietly();
             throw ex;
         }
@@ -155,11 +175,101 @@ final class SystemProxyService {
         if (!active) {
             return;
         }
+        Optional<SystemProxyRecoverySnapshot> persisted = loadRecoverySnapshot();
+        if (persisted.isPresent()
+                && !persisted.get().ownerId().isBlank()
+                && !ownerId.equals(persisted.get().ownerId())) {
+            log.info("Skipping system proxy restore because another capture instance owns the current snapshot");
+            clearActiveState();
+            return;
+        }
+        log.info("Restoring system proxy captured by process {} (owner={})",
+                ProcessHandle.current().pid(), ownerId);
         if (isWindows()) {
             restoreWindowsSnapshot();
             return;
         }
         restoreSnapshots();
+    }
+
+    /** Reapplies the captured proxy configuration if another process or macOS replaces it. */
+    synchronized boolean ensureSynced() throws Exception {
+        if (!active) {
+            return false;
+        }
+        try {
+            Optional<SystemProxyRecoverySnapshot> persisted = loadRecoverySnapshot();
+            if (persisted.isPresent()
+                    && !persisted.get().ownerId().isBlank()
+                    && !ownerId.equals(persisted.get().ownerId())) {
+                throw new IllegalStateException("Another capture instance owns the system proxy snapshot");
+            }
+            if (isWindows()) {
+                if (isWindowsProxyEffective()) {
+                    effectiveProxyHealthy = true;
+                    return false;
+                }
+                if (effectiveProxyHealthy) {
+                    log.warn("Windows system proxy changed during capture; reapplying {}:{} (ownerPid={})",
+                            activeHost, activePort, ProcessHandle.current().pid());
+                }
+                effectiveProxyHealthy = false;
+                saveRecoverySnapshotQuietly(activeHost, activePort, Map.of(), windowsSnapshot);
+                applyWindowsProxy(activeHost, activePort, windowsSnapshot.proxyOverrideData());
+                if (!isWindowsProxyEffective()) {
+                    throw new IllegalStateException("Windows system proxy is still not effective after reapplying it");
+                }
+            } else {
+                Map<String, String> currentProxy = parseKeyValueLines(readLines(SCUTIL, "--proxy"));
+                if (isMacProxyEffective(currentProxy)) {
+                    effectiveProxyHealthy = true;
+                    return false;
+                }
+                if (effectiveProxyHealthy) {
+                    log.warn("macOS system proxy changed during capture: HTTP={}:{} enabled={}, HTTPS={}:{} enabled={}; expected {}:{} (ownerPid={})",
+                            currentProxy.getOrDefault("HTTPProxy", ""), currentProxy.getOrDefault("HTTPPort", ""),
+                            currentProxy.getOrDefault("HTTPEnable", "0"),
+                            currentProxy.getOrDefault("HTTPSProxy", ""), currentProxy.getOrDefault("HTTPSPort", ""),
+                            currentProxy.getOrDefault("HTTPSEnable", "0"),
+                            activeHost, activePort, ProcessHandle.current().pid());
+                }
+                effectiveProxyHealthy = false;
+                saveRecoverySnapshotQuietly(activeHost, activePort, snapshots, null);
+                for (Map.Entry<String, ProxyServiceSnapshot> entry : snapshots.entrySet()) {
+                    applyProxy(entry.getKey(), activeHost, activePort, entry.getValue().bypassDomains());
+                }
+                if (!isMacProxyEffective()) {
+                    throw new IllegalStateException("macOS effective system proxy is still not configured after reapplying it");
+                }
+            }
+            effectiveProxyHealthy = true;
+            return true;
+        } catch (Exception ex) {
+            effectiveProxyHealthy = false;
+            throw ex;
+        }
+    }
+
+    private boolean isMacProxyEffective() throws Exception {
+        Map<String, String> values = parseKeyValueLines(readLines(SCUTIL, "--proxy"));
+        return isMacProxyEffective(values);
+    }
+
+    private boolean isMacProxyEffective(Map<String, String> values) {
+        return "1".equals(values.get("HTTPEnable"))
+                && "1".equals(values.get("HTTPSEnable"))
+                && activeHost.equals(normalizeProxyHost(values.get("HTTPProxy")))
+                && activeHost.equals(normalizeProxyHost(values.get("HTTPSProxy")))
+                && activePort == parsePort(values.get("HTTPPort"))
+                && activePort == parsePort(values.get("HTTPSPort"))
+                && !"1".equals(values.get("ProxyAutoConfigEnable"))
+                && !"1".equals(values.get("ProxyAutoDiscoveryEnable"));
+    }
+
+    private boolean isWindowsProxyEffective() throws Exception {
+        WindowsProxySnapshot current = readWindowsSnapshot();
+        return isRegistryDwordEnabled(current.proxyEnable())
+                && windowsProxyServerMatches(registryData(current.proxyServer()), activeHost, activePort);
     }
 
     String statusSummary() {
@@ -179,6 +289,9 @@ final class SystemProxyService {
     }
 
     private synchronized void restoreSnapshots() throws Exception {
+        if (!active) {
+            return;
+        }
         Map<String, ProxyServiceSnapshot> currentSnapshots = snapshots;
         try {
             for (Map.Entry<String, ProxyServiceSnapshot> entry : currentSnapshots.entrySet()) {
@@ -187,6 +300,7 @@ final class SystemProxyService {
             deleteRecoverySnapshotQuietly();
         } finally {
             active = false;
+            effectiveProxyHealthy = false;
             activeHost = "";
             activePort = 0;
             snapshots = Map.of();
@@ -195,14 +309,19 @@ final class SystemProxyService {
 
     private void restoreQuietly() {
         try {
-            if (isWindows()) {
-                restoreWindowsSnapshot();
-            } else {
-                restoreSnapshots();
-            }
+            disable();
         } catch (Exception ex) {
             log.warn("Failed to restore system proxy settings", ex);
         }
+    }
+
+    private void clearActiveState() {
+        active = false;
+        effectiveProxyHealthy = false;
+        activeHost = "";
+        activePort = 0;
+        snapshots = Map.of();
+        windowsSnapshot = null;
     }
 
     private void saveRecoverySnapshotQuietly(
@@ -248,6 +367,18 @@ final class SystemProxyService {
     private boolean isSamePlatform(String snapshotOsName) {
         String normalized = snapshotOsName == null ? "" : snapshotOsName.toLowerCase(Locale.ROOT);
         return isWindows() ? normalized.contains("win") : normalized.contains("mac");
+    }
+
+    private boolean isOwnerProcessAlive(SystemProxyRecoverySnapshot snapshot) {
+        if (snapshot.ownerPid() <= 0) {
+            return false;
+        }
+        return ProcessHandle.of(snapshot.ownerPid()).filter(ProcessHandle::isAlive)
+                .map(process -> snapshot.ownerStartedAt() <= 0
+                        || process.info().startInstant()
+                        .map(startedAt -> startedAt.toEpochMilli() == snapshot.ownerStartedAt())
+                        .orElse(true))
+                .orElse(false);
     }
 
     private boolean isCurrentProxyOwnedBy(SystemProxyRecoverySnapshot snapshot) throws Exception {
@@ -306,6 +437,10 @@ final class SystemProxyService {
     ) {
         Map<String, Object> root = new LinkedHashMap<>();
         root.put("schemaVersion", 1);
+        root.put("ownerId", ownerId);
+        root.put("ownerPid", ProcessHandle.current().pid());
+        root.put("ownerStartedAt", ProcessHandle.current().info().startInstant()
+                .map(startedAt -> startedAt.toEpochMilli()).orElse(0L));
         root.put("osName", osName);
         root.put("activeHost", host);
         root.put("activePort", port);
@@ -317,6 +452,9 @@ final class SystemProxyService {
     private SystemProxyRecoverySnapshot recoverySnapshotFromJson(String json) {
         Map<String, Object> root = objectMap(JsonUtil.convertValue(JsonUtil.readTree(json), Map.class));
         return new SystemProxyRecoverySnapshot(
+                stringValue(root, "ownerId", ""),
+                longValue(root, "ownerPid", 0L),
+                longValue(root, "ownerStartedAt", 0L),
                 stringValue(root, "osName", ""),
                 stringValue(root, "activeHost", ""),
                 intValue(root, "activePort", 0),
@@ -450,6 +588,21 @@ final class SystemProxyService {
         }
     }
 
+    private long longValue(Map<String, Object> root, String key, long defaultValue) {
+        Object value = root.get(key);
+        if (value instanceof Number number) {
+            return number.longValue();
+        }
+        if (value == null) {
+            return defaultValue;
+        }
+        try {
+            return Long.parseLong(value.toString());
+        } catch (NumberFormatException ex) {
+            return defaultValue;
+        }
+    }
+
     private boolean booleanValue(Map<String, Object> root, String key, boolean defaultValue) {
         Object value = root.get(key);
         if (value instanceof Boolean bool) {
@@ -471,7 +624,7 @@ final class SystemProxyService {
             if (proxyHost.equals(activeHost) && port == activePort) {
                 return;
             }
-            restoreWindowsSnapshot();
+            disable();
         }
 
         WindowsProxySnapshot snapshot = readWindowsSnapshot();
@@ -482,8 +635,12 @@ final class SystemProxyService {
             activeHost = proxyHost;
             activePort = port;
             active = true;
+            effectiveProxyHealthy = true;
         } catch (Exception ex) {
             windowsSnapshot = snapshot;
+            activeHost = proxyHost;
+            activePort = port;
+            active = true;
             restoreQuietly();
             throw ex;
         }
@@ -492,8 +649,8 @@ final class SystemProxyService {
     private void applyProxy(String service, String host, int port, List<String> originalBypassDomains) throws Exception {
         runCommand(NETWORKSETUP, "-setproxyautodiscovery", service, "off");
         runCommand(NETWORKSETUP, "-setautoproxystate", service, "off");
-        runCommand(NETWORKSETUP, "-setwebproxy", service, host, String.valueOf(port));
-        runCommand(NETWORKSETUP, "-setsecurewebproxy", service, host, String.valueOf(port));
+        setProxyEndpoint(service, false, host, port);
+        setProxyEndpoint(service, true, host, port);
 
         LinkedHashSet<String> bypassDomains = new LinkedHashSet<>(originalBypassDomains);
         bypassDomains.addAll(REQUIRED_BYPASS_DOMAINS);
@@ -531,13 +688,7 @@ final class SystemProxyService {
 
     private void restoreProxy(String service, boolean secure, ProxyEndpoint endpoint) throws Exception {
         if (endpoint.server() != null && !endpoint.server().isBlank() && endpoint.port() > 0) {
-            runCommand(
-                    NETWORKSETUP,
-                    secure ? "-setsecurewebproxy" : "-setwebproxy",
-                    service,
-                    endpoint.server(),
-                    String.valueOf(endpoint.port())
-            );
+            setProxyEndpoint(service, secure, endpoint.server(), endpoint.port());
         }
         runCommand(
                 NETWORKSETUP,
@@ -623,6 +774,59 @@ final class SystemProxyService {
         runCommand(command);
     }
 
+    /**
+     * macOS documents the authenticated/username/password arguments for these
+     * commands, but some older releases accepted the shorter three-argument
+     * form. Prefer the documented form and retain a narrowly-scoped fallback
+     * for those older releases.
+     */
+    private void setProxyEndpoint(String service, boolean secure, String host, int port) throws Exception {
+        String operation = secure ? "-setsecurewebproxy" : "-setwebproxy";
+        List<String> documentedCommand = List.of(
+                NETWORKSETUP,
+                operation,
+                service,
+                host,
+                String.valueOf(port),
+                "off",
+                "",
+                ""
+        );
+        CommandResult documentedResult = runCommandAllowFailure(documentedCommand);
+        if (documentedResult.exitCode() == 0) {
+            return;
+        }
+
+        if (!isParameterValidationFailure(documentedResult)) {
+            throw commandFailure(documentedCommand, documentedResult);
+        }
+
+        List<String> legacyCommand = List.of(
+                NETWORKSETUP,
+                operation,
+                service,
+                host,
+                String.valueOf(port)
+        );
+        log.warn("macOS networksetup rejected documented proxy arguments; trying legacy form: "
+                        + "command={}, exitCode={}, output={}",
+                formatCommand(documentedCommand),
+                documentedResult.exitCode(),
+                formatOutput(documentedResult));
+        CommandResult legacyResult = runCommandAllowFailure(legacyCommand);
+        if (legacyResult.exitCode() == 0) {
+            log.info("Using legacy macOS networksetup proxy argument form for service {}", service);
+            return;
+        }
+
+        throw commandFailure(legacyCommand, legacyResult);
+    }
+
+    private boolean isParameterValidationFailure(CommandResult result) {
+        String output = String.join(System.lineSeparator(), result.lines()).toLowerCase(Locale.ROOT);
+        return output.contains(INVALID_PARAMETERS_MARKER) || output.contains(USAGE_MARKER);
+    }
+
     private boolean parseEnabled(List<String> lines) {
         Map<String, String> values = parseKeyValueLines(lines);
         return values.values().stream().findFirst()
@@ -658,6 +862,7 @@ final class SystemProxyService {
         WindowsProxySnapshot snapshot = windowsSnapshot;
         if (snapshot == null) {
             active = false;
+            effectiveProxyHealthy = false;
             activeHost = "";
             activePort = 0;
             return;
@@ -667,6 +872,7 @@ final class SystemProxyService {
             deleteRecoverySnapshotQuietly();
         } finally {
             active = false;
+            effectiveProxyHealthy = false;
             activeHost = "";
             activePort = 0;
             windowsSnapshot = null;
@@ -843,9 +1049,41 @@ final class SystemProxyService {
     private CommandResult runCommand(List<String> command) throws Exception {
         CommandResult result = runCommandAllowFailure(command);
         if (result.exitCode() != 0) {
-            throw new IllegalStateException(String.join(System.lineSeparator(), result.lines()));
+            throw commandFailure(command, result);
         }
         return result;
+    }
+
+    private IllegalStateException commandFailure(List<String> command, CommandResult result) {
+        IllegalStateException failure = new IllegalStateException(
+                "Command failed with exit code " + result.exitCode() + ": " + formatOutput(result)
+        );
+        log.error("External command failed: command={}, exitCode={}, output={}",
+                formatCommand(command), result.exitCode(), formatOutput(result), failure);
+        return failure;
+    }
+
+    private String formatCommand(List<String> command) {
+        return command.stream()
+                .map(this::formatCommandArgument)
+                .reduce((left, right) -> left + " " + right)
+                .orElse("");
+    }
+
+    private String formatCommandArgument(String argument) {
+        if (argument == null) {
+            return "<null>";
+        }
+        String value = argument.length() > 240 ? argument.substring(0, 240) + "..." : argument;
+        return '"' + value.replace("\\", "\\\\").replace("\"", "\\\"") + '"';
+    }
+
+    private String formatOutput(CommandResult result) {
+        if (result.lines() == null || result.lines().isEmpty()) {
+            return "<no output>";
+        }
+        String output = String.join(" | ", result.lines()).trim();
+        return output.length() > 2_000 ? output.substring(0, 2_000) + "..." : output;
     }
 
     private CommandResult runCommandAllowFailure(List<String> command) throws Exception {
@@ -875,6 +1113,9 @@ final class SystemProxyService {
     }
 
     private record SystemProxyRecoverySnapshot(
+            String ownerId,
+            long ownerPid,
+            long ownerStartedAt,
             String osName,
             String activeHost,
             int activePort,

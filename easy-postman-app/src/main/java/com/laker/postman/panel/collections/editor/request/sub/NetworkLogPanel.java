@@ -4,6 +4,7 @@ import com.formdev.flatlaf.FlatClientProperties;
 import com.laker.postman.http.runtime.model.HttpResponse;
 import com.laker.postman.http.runtime.model.PreparedRequest;
 import com.laker.postman.http.runtime.observation.NetworkLogEvent;
+import com.laker.postman.http.runtime.observation.NetworkLogEventStage;
 import com.laker.postman.common.component.ToolWindowSurfaceStyle;
 import com.laker.postman.service.curl.CurlParser;
 import com.laker.postman.service.render.HttpHtmlRenderer;
@@ -59,7 +60,7 @@ public class NetworkLogPanel extends JPanel {
         doc = logArea.getStyledDocument();
         JScrollPane logScroll = new JScrollPane(logArea);
         ToolWindowSurfaceStyle.applyScrollPaneCard(logScroll);
-        tabbedPane.addTab("Log", logScroll);
+        tabbedPane.addTab(I18nUtil.getMessage(MessageKeys.NETWORK_LOG_TAB_LOG), logScroll);
 
         // 2. Request Details Tab
         requestDetailsPane = createDetailPane();
@@ -67,7 +68,7 @@ public class NetworkLogPanel extends JPanel {
         ToolWindowSurfaceStyle.applyScrollPaneCard(requestDetailsScroll);
         requestDetailsScroll.setVerticalScrollBarPolicy(ScrollPaneConstants.VERTICAL_SCROLLBAR_AS_NEEDED);
         requestDetailsScroll.setHorizontalScrollBarPolicy(ScrollPaneConstants.HORIZONTAL_SCROLLBAR_AS_NEEDED);
-        tabbedPane.addTab("Request", requestDetailsScroll);
+        tabbedPane.addTab(I18nUtil.getMessage(MessageKeys.NETWORK_LOG_TAB_REQUEST), requestDetailsScroll);
 
         // 3. Response Details Tab
         responseDetailsPane = createDetailPane();
@@ -75,7 +76,7 @@ public class NetworkLogPanel extends JPanel {
         ToolWindowSurfaceStyle.applyScrollPaneCard(responseDetailsScroll);
         responseDetailsScroll.setVerticalScrollBarPolicy(ScrollPaneConstants.VERTICAL_SCROLLBAR_AS_NEEDED);
         responseDetailsScroll.setHorizontalScrollBarPolicy(ScrollPaneConstants.HORIZONTAL_SCROLLBAR_AS_NEEDED);
-        tabbedPane.addTab("Response", responseDetailsScroll);
+        tabbedPane.addTab(I18nUtil.getMessage(MessageKeys.NETWORK_LOG_TAB_RESPONSE), responseDetailsScroll);
 
         add(tabbedPane, BorderLayout.CENTER);
     }
@@ -134,7 +135,10 @@ public class NetworkLogPanel extends JPanel {
         if (event == null) {
             return;
         }
-        appendLog(NetworkLogStage.fromEventStage(event.stage()), event.message(), event.elapsedMs(), event.durationMs());
+        NetworkLogEventStage eventStage = event.stage();
+        appendLog(NetworkLogStage.fromEventStage(eventStage),
+                NetworkLogMessageFormatter.format(eventStage, event.message()),
+                event.elapsedMs(), event.durationMs());
     }
 
     /**
@@ -162,8 +166,9 @@ public class NetworkLogPanel extends JPanel {
                 // 内容截断优化：如果内容过长，进行截断
                 String content = msg != null ? msg : "";
                 if (content.length() > MAX_LINE_LENGTH * MAX_LINES_PER_MESSAGE) {
+                    int originalLength = content.length();
                     content = content.substring(0, MAX_LINE_LENGTH * MAX_LINES_PER_MESSAGE)
-                            + "\n... [Content truncated, total " + content.length() + " characters]";
+                            + "\n" + I18nUtil.getMessage(MessageKeys.NETWORK_LOG_CONTENT_TRUNCATED, originalLength);
                 }
 
                 // 从枚举获取配置
@@ -176,15 +181,13 @@ public class NetworkLogPanel extends JPanel {
 
                 // 插入 emoji + 阶段名 + 时间（如果有）
                 StringBuilder stageText = new StringBuilder();
-                stageText.append(emoji).append(" [").append(resolvedStage.getStageName()).append("]");
+                stageText.append(emoji).append(" [").append(resolvedStage.getDisplayName()).append("]");
                 if (elapsedMs != null) {
                     stageText.append(" +").append(elapsedMs).append("ms");
                 }
                 if (durationMs != null) {
                     stageText.append(elapsedMs == null ? " " : ", ")
-                            .append("phase=")
-                            .append(durationMs)
-                            .append("ms");
+                            .append(I18nUtil.getMessage(MessageKeys.NETWORK_LOG_PHASE_DURATION, durationMs));
                 }
                 stageText.append(" ");
                 doc.insertString(doc.getLength(), stageText.toString(), stageStyle);
@@ -232,9 +235,9 @@ public class NetworkLogPanel extends JPanel {
         }
         // 如果行数被截断，添加提示
         if (lines.length > MAX_LINES_PER_MESSAGE) {
-            formatted.append("\n    ... [")
-                    .append(lines.length - MAX_LINES_PER_MESSAGE)
-                    .append(" more lines omitted]");
+            formatted.append("\n    ")
+                    .append(I18nUtil.getMessage(MessageKeys.NETWORK_LOG_LINES_OMITTED,
+                            lines.length - MAX_LINES_PER_MESSAGE));
         }
         formatted.append("\n");
         return formatted.toString();

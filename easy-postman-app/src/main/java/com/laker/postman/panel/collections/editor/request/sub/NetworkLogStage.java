@@ -2,9 +2,12 @@ package com.laker.postman.panel.collections.editor.request.sub;
 
 import com.laker.postman.common.constants.ModernColors;
 import com.laker.postman.http.runtime.observation.NetworkLogEventStage;
+import com.laker.postman.util.I18nUtil;
+import com.laker.postman.util.MessageKeys;
 import lombok.Getter;
 
 import java.awt.*;
+import java.util.Locale;
 import java.util.function.Supplier;
 
 /**
@@ -27,7 +30,7 @@ public enum NetworkLogStage {
     DISPATCHER_QUEUE_START("DispatcherQueueStart", "⏳", ModernColors::getInfo, false),
     DISPATCHER_QUEUE_END("DispatcherQueueEnd", "▶️", ModernColors::getInfo, false),
     RETRY_DECISION("RetryDecision", "🔁", ModernColors::getWarning, false),
-    FOLLOW_UP_DECISION("FollowUpDecision", "↪️", ModernColors::getWarning, false),
+    FOLLOW_UP_DECISION("FollowUpDecision", "↪️", ModernColors::getInfo, false),
     CACHE_HIT("CacheHit", "💾", ModernColors::getSuccess, false),
     CACHE_MISS("CacheMiss", "❌", ModernColors::getInfo, false),
     CACHE_CONDITIONAL_HIT("CacheConditionalHit", "💾", ModernColors::getInfo, false),
@@ -89,6 +92,15 @@ public enum NetworkLogStage {
      */
     public Color getColor() {
         return colorProvider.get();
+    }
+
+    /**
+     * 获取当前语言的用户可读阶段名称。技术标识仍由 {@link #getStageName()} 保留，
+     * 便于开发者在日志中定位底层事件。
+     */
+    public String getDisplayName() {
+        return I18nUtil.getMessage(MessageKeys.NETWORK_LOG_STAGE_PREFIX
+                + name().toLowerCase(Locale.ROOT));
     }
 
     private static Color getSecureConnectColor() {

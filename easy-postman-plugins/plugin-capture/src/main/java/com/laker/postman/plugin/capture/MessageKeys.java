@@ -19,7 +19,6 @@ public final class MessageKeys {
     public static final String TOOLBOX_CAPTURE_QUICK_FILTER_IMAGE = "toolbox.capture.quick_filter.image";
     public static final String TOOLBOX_CAPTURE_QUICK_FILTER_JS = "toolbox.capture.quick_filter.js";
     public static final String TOOLBOX_CAPTURE_QUICK_FILTER_CSS = "toolbox.capture.quick_filter.css";
-    public static final String TOOLBOX_CAPTURE_QUICK_FILTER_API = "toolbox.capture.quick_filter.api";
     public static final String TOOLBOX_CAPTURE_QUICK_FILTER_SSE = "toolbox.capture.quick_filter.sse";
     public static final String TOOLBOX_CAPTURE_QUICK_FILTER_WS = "toolbox.capture.quick_filter.ws";
     public static final String TOOLBOX_CAPTURE_QUICK_FILTERS_LABEL = "toolbox.capture.quick_filters.label";
@@ -28,7 +27,6 @@ public final class MessageKeys {
     public static final String TOOLBOX_CAPTURE_VIEW_FILTER_SLOW = "toolbox.capture.view_filter.slow";
     public static final String TOOLBOX_CAPTURE_VIEW_FILTER_HIDE_STATIC = "toolbox.capture.view_filter.hide_static";
     public static final String TOOLBOX_CAPTURE_VIEW_FILTER_HIDE_TELEMETRY = "toolbox.capture.view_filter.hide_telemetry";
-    public static final String TOOLBOX_CAPTURE_VIEW_FILTER_API_ONLY = "toolbox.capture.view_filter.api_only";
     public static final String TOOLBOX_CAPTURE_VIEW_FILTER_ERROR_PRIORITY = "toolbox.capture.view_filter.error_priority";
     public static final String TOOLBOX_CAPTURE_VIEW_FILTER_ALL = "toolbox.capture.view_filter.all";
     public static final String TOOLBOX_CAPTURE_VIEW_FILTER_RULES = "toolbox.capture.view_filter.rules";
@@ -124,6 +122,7 @@ public final class MessageKeys {
     public static final String TOOLBOX_CAPTURE_SYSTEM_PROXY_UNSUPPORTED = "toolbox.capture.system_proxy.unsupported";
     public static final String TOOLBOX_CAPTURE_SYSTEM_PROXY_MANUAL = "toolbox.capture.system_proxy.manual";
     public static final String TOOLBOX_CAPTURE_SYSTEM_PROXY_PENDING = "toolbox.capture.system_proxy.pending";
+    public static final String TOOLBOX_CAPTURE_SYSTEM_PROXY_LOST = "toolbox.capture.system_proxy.lost";
     public static final String TOOLBOX_CAPTURE_FILTER_ALL = "toolbox.capture.filter.all";
     public static final String TOOLBOX_CAPTURE_FILTER_RULES = "toolbox.capture.filter.rules";
     public static final String TOOLBOX_CAPTURE_FILTER_INVALID = "toolbox.capture.filter.invalid";
