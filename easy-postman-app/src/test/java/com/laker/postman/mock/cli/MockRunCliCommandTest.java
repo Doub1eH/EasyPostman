@@ -65,6 +65,8 @@ public class MockRunCliCommandTest {
         assertEquals(response.statusCode(), 200);
         assertEquals(response.body(), "{\"status\":\"ok\"}");
         assertEquals(exitCode.get(), 0, stderr.toString(StandardCharsets.UTF_8));
+        assertTrue(stdout.toString(StandardCharsets.UTF_8)
+                .contains("Access URL: http://127.0.0.1:" + port));
         assertTrue(!commandThread.isAlive(), "Mock CLI should stop after interruption");
     }
 

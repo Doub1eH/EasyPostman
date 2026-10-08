@@ -114,10 +114,14 @@ public class SimpleThemeManager {
                 FontManager.installSavedFontDefaults();
                 ToolWindowSurfaceStyle.installGlobalDialogWindowChrome();
 
-                UserPreferencesStore.put(THEME_SETTING_KEY, theme.id());
+                if (showNotification) {
+                    UserPreferencesStore.put(THEME_SETTING_KEY, theme.id());
+                }
 
-                // 更新所有已打开的窗口
-                updateAllWindows();
+                // 启动时尚无窗口；仅在运行时切换主题后刷新现有窗口。
+                if (showNotification) {
+                    updateAllWindows();
+                }
 
                 log.info("Applied theme: {}", theme.id());
 

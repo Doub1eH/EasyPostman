@@ -91,14 +91,12 @@ App.main()
             -> master: load plan + dispatch workers over HTTP/JSON
             -> return CLI exit code without entering Swing EDT
        -> configurePlatformWindowDecorations()  // GUI branch, Linux: FlatLaf window decorations
+       -> StartupCoordinator.startHostIocInitialization()  // background IOC scan and workspace state
+       -> SimpleThemeManager.initTheme()  // launcher thread, before Swing components exist
        -> SwingUtilities.invokeLater()
-            -> SimpleThemeManager.initTheme()   // reads easy_postman_settings.properties
-            -> FontManager.applyFontSettings()
-            -> SplashWindow or direct SwingWorker
-                 -> StartupCoordinator.prepareMainFrame()
-                      -> BeanFactory.init("com.laker.postman")   // scans @Component beans
-                      -> PluginRuntime.initialize()               // scan, load, lifecycle
-                      -> MainFrame (EDT)
+            -> SplashWindow or no-splash SwingWorker
+            -> background worker waits for IOC, then initializes PluginRuntime
+            -> create MainFrame with its menu on EDT, show its shell, then load main content
 ```
 
 ---

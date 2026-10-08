@@ -31,6 +31,7 @@ import javax.swing.JLabel;
 import javax.swing.JMenuBar;
 import javax.swing.JPanel;
 import javax.swing.SwingUtilities;
+import javax.swing.SwingWorker;
 import java.awt.Component;
 import java.awt.Dimension;
 import java.awt.event.ActionListener;
@@ -131,8 +132,10 @@ class TopMenuWorkspaceControls {
 
     private void addGitToolbarIfNeeded(JMenuBar menuBar) {
         try {
-            Workspace currentWorkspace = WorkspaceService.getInstance().getCurrentWorkspace();
-            if (currentWorkspace != null && currentWorkspace.getType() == WorkspaceType.GIT) {
+            WorkspaceService workspaceService = WorkspaceService.getInstance();
+            Workspace currentWorkspace = workspaceService.getCurrentWorkspace();
+            if (currentWorkspace != null && currentWorkspace.getType() == WorkspaceType.GIT
+                    && workspaceService.isGitServiceAvailable()) {
                 menuBar.add(createGitToolbar(currentWorkspace));
                 menuBar.add(Box.createHorizontalStrut(12));
             }
@@ -187,34 +190,51 @@ class TopMenuWorkspaceControls {
         toolbar.setLayout(new BoxLayout(toolbar, BoxLayout.X_AXIS));
         toolbar.setOpaque(false);
 
-        try {
-            RemoteStatus remoteStatus = WorkspaceService.getInstance().getRemoteStatus(workspace.getId());
-            toolbar.add(createGitButton(
-                    I18nUtil.getMessage(MessageKeys.WORKSPACE_GIT_COMMIT),
-                    GitOperationPresentation.getIconName(GitOperation.COMMIT),
-                    e -> performGitOperation(workspace, GitOperation.COMMIT)
-            ));
-
-            if (remoteStatus.hasRemote) {
-                toolbar.add(createGitButton(
-                        I18nUtil.getMessage(MessageKeys.WORKSPACE_GIT_PULL),
-                        GitOperationPresentation.getIconName(GitOperation.PULL),
-                        e -> performGitOperation(workspace, GitOperation.PULL)
-                ));
-
-                if (remoteStatus.hasUpstream) {
-                    toolbar.add(createGitButton(
-                            I18nUtil.getMessage(MessageKeys.WORKSPACE_GIT_PUSH),
-                            GitOperationPresentation.getIconName(GitOperation.PUSH),
-                            e -> performGitOperation(workspace, GitOperation.PUSH)
-                    ));
-                }
-            }
-        } catch (Exception e) {
-            log.error("Failed to create Git toolbar buttons", e);
-        }
+        toolbar.add(createGitButton(
+                I18nUtil.getMessage(MessageKeys.WORKSPACE_GIT_COMMIT),
+                GitOperationPresentation.getIconName(GitOperation.COMMIT),
+                e -> performGitOperation(workspace, GitOperation.COMMIT)
+        ));
+        loadRemoteGitButtons(toolbar, workspace);
 
         return toolbar;
+    }
+
+    private void loadRemoteGitButtons(JPanel toolbar, Workspace workspace) {
+        new SwingWorker<RemoteStatus, Void>() {
+            @Override
+            protected RemoteStatus doInBackground() throws Exception {
+                return WorkspaceService.getInstance().getRemoteStatus(workspace.getId());
+            }
+
+            @Override
+            protected void done() {
+                try {
+                    RemoteStatus remoteStatus = get();
+                    if (toolbar.getParent() == null || !remoteStatus.hasRemote) {
+                        return;
+                    }
+                    toolbar.add(createGitButton(
+                            I18nUtil.getMessage(MessageKeys.WORKSPACE_GIT_PULL),
+                            GitOperationPresentation.getIconName(GitOperation.PULL),
+                            e -> performGitOperation(workspace, GitOperation.PULL)
+                    ));
+                    if (remoteStatus.hasUpstream) {
+                        toolbar.add(createGitButton(
+                                I18nUtil.getMessage(MessageKeys.WORKSPACE_GIT_PUSH),
+                                GitOperationPresentation.getIconName(GitOperation.PUSH),
+                                e -> performGitOperation(workspace, GitOperation.PUSH)
+                        ));
+                    }
+                    toolbar.revalidate();
+                    toolbar.repaint();
+                } catch (InterruptedException e) {
+                    Thread.currentThread().interrupt();
+                } catch (Exception e) {
+                    log.error("Failed to create Git toolbar buttons", e);
+                }
+            }
+        }.execute();
     }
 
     private JButton createGitButton(String tooltip, String iconPath, ActionListener action) {

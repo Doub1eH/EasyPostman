@@ -15,13 +15,19 @@ import lombok.experimental.UtilityClass;
 
 import javax.swing.JOptionPane;
 import javax.swing.JTabbedPane;
+import java.io.File;
+import java.util.ArrayList;
 import java.util.List;
 
 @UtilityClass
 public class OpenedRequestTabSessionSaver {
 
     public static void saveOpenTabsOnExit() {
-        RequestEditorPanel editPanel = UiSingletonFactory.getInstance(RequestEditorPanel.class);
+        // 启动壳显示期间请求编辑器尚未创建，不能为了退出而创建空编辑器并覆盖上次会话。
+        RequestEditorPanel editPanel = UiSingletonFactory.getExistingInstance(RequestEditorPanel.class).orElse(null);
+        if (editPanel == null) {
+            return;
+        }
         JTabbedPane tabbedPane = editPanel.getTabbedPane();
         List<Integer> unsavedTabs = OpenedRequestTabSnapshotCollector.findUnsavedTabs(tabbedPane);
 
@@ -39,10 +45,30 @@ public class OpenedRequestTabSessionSaver {
 
         List<HttpRequestItem> openedRequestItems =
                 OpenedRequestTabSnapshotCollector.collectOpenedRequestItems(tabbedPane, saveAll);
+        // 集合加载完成前，旧会话仍留在磁盘上。先保留它，再合并用户刚打开的标签。
+        if (new File(OpenedRequestTabsStore.PATHNAME).isFile()) {
+            if (openedRequestItems.isEmpty()) {
+                return;
+            }
+            openedRequestItems = mergeWithPendingSession(OpenedRequestTabsStore.loadAll(), openedRequestItems);
+        }
         OpenedRequestTabsStore.saveAll(OpenedRequestTabSnapshotCollector.limitToMostRecent(
                 openedRequestItems,
                 SettingManager.getMaxOpenedRequestsCount()
         ));
+    }
+
+    static List<HttpRequestItem> mergeWithPendingSession(List<HttpRequestItem> pending,
+                                                          List<HttpRequestItem> current) {
+        List<HttpRequestItem> merged = new ArrayList<>(pending);
+        for (HttpRequestItem item : current) {
+            String id = item.getId();
+            if (id != null && !id.isBlank()) {
+                merged.removeIf(old -> id.equals(old.getId()));
+            }
+            merged.add(item);
+        }
+        return merged;
     }
 
     private static int showUnsavedChangesDialog() {

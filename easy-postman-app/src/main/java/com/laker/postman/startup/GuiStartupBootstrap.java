@@ -5,6 +5,8 @@ import com.laker.postman.ioc.BeanFactory;
 import com.laker.postman.plugin.api.service.RequestCollectionImportService;
 import com.laker.postman.plugin.host.AppSwingRequestCollectionImportService;
 import com.laker.postman.plugin.runtime.PluginRuntime;
+import com.laker.postman.service.EnvironmentService;
+import com.laker.postman.service.WorkspaceService;
 import lombok.experimental.UtilityClass;
 
 /**
@@ -15,6 +17,11 @@ class GuiStartupBootstrap {
 
     void initBeanFactory() {
         BeanFactory.init(AppConstants.BASE_PACKAGE);
+    }
+
+    void initWorkspaceState() {
+        WorkspaceService.getInstance();
+        EnvironmentService.getAllEnvironments();
     }
 
     void initPluginRuntime() {

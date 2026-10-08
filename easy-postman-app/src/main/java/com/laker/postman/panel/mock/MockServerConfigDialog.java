@@ -50,7 +50,6 @@ final class MockServerConfigDialog extends JDialog {
     private final JPasswordField accessKeyField = new JPasswordField();
     private final JCheckBox corsCheck = new JCheckBox(I18nUtil.getMessage(MessageKeys.MOCK_SERVER_CORS));
     private final JCheckBox bodyCheck = new JCheckBox(I18nUtil.getMessage(MessageKeys.MOCK_SERVER_MATCH_BODY));
-    private final JCheckBox autoStartCheck = new JCheckBox(I18nUtil.getMessage(MessageKeys.MOCK_SERVER_AUTO_START));
     private final JCheckBox recordLogsCheck = new JCheckBox(
             I18nUtil.getMessage(MessageKeys.MOCK_SERVER_RECORD_CALL_LOGS));
     private final JTextField headersField = new JTextField();
@@ -246,7 +245,6 @@ final class MockServerConfigDialog extends JDialog {
                 "insets 0,fillx,wrap 1,gapy 4,novisualpadding", "[grow]", "[]"));
         ToolWindowSurfaceStyle.applyDialogSurface(options);
         options.add(corsCheck);
-        options.add(autoStartCheck);
         options.add(recordLogsCheck);
         options.add(bodyCheck);
         panel.add(new JLabel());
@@ -298,7 +296,6 @@ final class MockServerConfigDialog extends JDialog {
         accessKeyPanel.setVisible(accessProtectionCheck.isSelected());
         corsCheck.setSelected(source.isCorsEnabled());
         bodyCheck.setSelected(source.isMatchRequestBody());
-        autoStartCheck.setSelected(source.isAutoStart());
         recordLogsCheck.setSelected(source.isRecordCallLogs());
         headersField.setText(String.join(", ", source.getMatchHeaderNames() == null
                 ? List.of() : source.getMatchHeaderNames()));
@@ -323,7 +320,6 @@ final class MockServerConfigDialog extends JDialog {
 
         boolean showAdvanced = source.getFixedDelayMs() > 0
                 || !source.isCorsEnabled()
-                || source.isAutoStart()
                 || !source.isRecordCallLogs()
                 || source.isMatchRequestBody()
                 || !headersField.getText().isBlank()
@@ -374,7 +370,6 @@ final class MockServerConfigDialog extends JDialog {
         definition.setFixedDelayMs((Integer) delaySpinner.getValue());
         definition.setCorsEnabled(corsCheck.isSelected());
         definition.setMatchRequestBody(bodyCheck.isSelected());
-        definition.setAutoStart(autoStartCheck.isSelected());
         definition.setRecordCallLogs(recordLogsCheck.isSelected());
         definition.setMatchHeaderNames(parseHeaders(headersField.getText()));
         result = definition;

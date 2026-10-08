@@ -1,7 +1,6 @@
 package com.laker.postman.frame;
 
 import com.laker.postman.common.UiSingletonFactory;
-import com.laker.postman.common.animation.WindowSnapshotTransition;
 import com.laker.postman.common.component.placeholder.StartupShellPlaceholderPanel;
 import com.laker.postman.common.constants.Icons;
 import com.laker.postman.common.constants.ModernColors;
@@ -25,7 +24,6 @@ import java.util.function.Consumer;
  */
 @Slf4j
 public class MainFrame extends JFrame {
-    private final transient WindowSnapshotTransition startupShellTransition;
     private final transient MainFrameStartupLifecycle startupLifecycle;
     private final transient MainWindowStateController windowStateController;
     private transient JPanel startupShellPanel;
@@ -33,7 +31,6 @@ public class MainFrame extends JFrame {
     // 单例模式，确保只有一个实例
     private MainFrame() {
         super();
-        startupShellTransition = new WindowSnapshotTransition(this);
         startupLifecycle = new MainFrameStartupLifecycle();
         windowStateController = new MainWindowStateController(this);
 
@@ -45,6 +42,10 @@ public class MainFrame extends JFrame {
 
     public void initComponents() {
         setJMenuBar(UiSingletonFactory.getInstance(TopMenuBar.class));
+        initStartupShell();
+    }
+
+    private void initStartupShell() {
         installStartupShell();
 
         // 设置最小窗口尺寸，防止窗口被拖得太小
@@ -80,7 +81,7 @@ public class MainFrame extends JFrame {
         Runnable task = () -> {
             try {
                 log.info("Main content initialization started");
-                replaceContentWithStartupTransition(UiSingletonFactory.getInstance(MainPanel.class));
+                replaceStartupShellWithContent(UiSingletonFactory.getInstance(MainPanel.class));
                 startupShellPanel = null;
                 startupLifecycle.markMainContentLoaded();
                 log.info("Main content initialization completed");
@@ -121,19 +122,11 @@ public class MainFrame extends JFrame {
         return root;
     }
 
-    private void replaceContentWithStartupTransition(Container nextContentPane) {
-        WindowSnapshotTransition.CapturedSnapshot capturedSnapshot = null;
-        Container currentContentPane = getContentPane();
-        if (currentContentPane instanceof JComponent contentComponent) {
-            // 这里只保留基于 layeredPane 的纯绘制快照过渡。
-            // 不再使用 glassPane 覆盖整窗，避免挡住底层分割条的 hover / resize cursor。
-            capturedSnapshot = startupShellTransition.captureSnapshot(contentComponent);
-        }
+    private void replaceStartupShellWithContent(Container nextContentPane) {
         setContentPane(nextContentPane);
         MainWindowChrome.applyBackground(this);
         revalidate();
         repaint();
-        startupShellTransition.start(capturedSnapshot);
     }
 
     public void whenMainContentLoaded(Runnable callback) {
@@ -166,7 +159,6 @@ public class MainFrame extends JFrame {
      */
     private void cleanup() {
         windowStateController.stop();
-        startupShellTransition.stop();
 
         // 清理性能测试面板资源（停止定时器等）
         try {

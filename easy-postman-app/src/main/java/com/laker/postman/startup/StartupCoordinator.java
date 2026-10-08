@@ -7,6 +7,7 @@ import com.laker.postman.service.sync.WebDavSyncScheduler;
 import lombok.extern.slf4j.Slf4j;
 
 import javax.swing.SwingUtilities;
+import java.util.concurrent.CompletableFuture;
 import java.util.function.Consumer;
 
 /**
@@ -14,30 +15,69 @@ import java.util.function.Consumer;
  */
 @Slf4j
 public class StartupCoordinator {
+    private final long launchStartedAtNanos;
+    private CompletableFuture<Void> hostIocInitialization;
 
-    public MainFrame prepareMainFrameShell(StartupProgressListener progressListener) throws Exception {
-        long startupStartedAt = System.nanoTime();
-        notifyProgress(progressListener, StartupStage.STARTING);
-        AppLauncher.markStartupCheckpoint("initializing host IOC container");
-        log.info("GUI startup stage: initializing host IOC container");
-        GuiStartupBootstrap.initBeanFactory();
-        AppLauncher.markStartupCheckpoint("host IOC container initialized");
-        log.info("GUI startup stage complete: host IOC container initialized");
+    public StartupCoordinator(long launchStartedAtNanos) {
+        this.launchStartedAtNanos = launchStartedAtNanos;
+    }
 
-        notifyProgress(progressListener, StartupStage.LOADING_PLUGINS);
+    /**
+     * IOC 扫描只注册 Bean 定义，与 Swing 主题安装互不依赖，可以同时进行。
+     */
+    public synchronized void startHostIocInitialization() {
+        if (hostIocInitialization != null) {
+            return;
+        }
+        hostIocInitialization = CompletableFuture.runAsync(() -> {
+            long startedAt = System.nanoTime();
+            AppLauncher.markStartupCheckpoint("initializing host IOC container");
+            log.info("GUI startup stage: initializing host IOC container");
+            GuiStartupBootstrap.initBeanFactory();
+            AppLauncher.markStartupCheckpoint("host IOC container initialized");
+            log.info("GUI startup stage complete: host IOC container initialized in {} ms",
+                    (System.nanoTime() - startedAt) / 1_000_000);
+            long workspaceStartedAt = System.nanoTime();
+            GuiStartupBootstrap.initWorkspaceState();
+            log.info("GUI startup stage complete: workspace state initialized in {} ms",
+                    (System.nanoTime() - workspaceStartedAt) / 1_000_000);
+        }, task -> {
+            Thread thread = new Thread(task, "GUI-IOC-Startup");
+            thread.setDaemon(true);
+            thread.start();
+        });
+    }
+
+    public void initializePluginRuntimeAfterHostReady() {
+        awaitHostIocInitialization();
+        long startedAt = System.nanoTime();
         AppLauncher.markStartupCheckpoint("initializing plugin runtime");
         log.info("GUI startup stage: initializing plugin runtime");
         GuiStartupBootstrap.initPluginRuntime();
         AppLauncher.markStartupCheckpoint("plugin runtime initialized");
-        log.info("GUI startup stage complete: plugin runtime initialized");
+        log.info("GUI startup stage complete: plugin runtime initialized in {} ms",
+                (System.nanoTime() - startedAt) / 1_000_000);
+    }
+
+    private void awaitHostIocInitialization() {
+        startHostIocInitialization();
+        hostIocInitialization.join();
+    }
+
+    public MainFrame prepareMainFrameShell(StartupProgressListener progressListener) throws Exception {
+        notifyProgress(progressListener, StartupStage.STARTING);
+        awaitHostIocInitialization();
+        notifyProgress(progressListener, StartupStage.LOADING_PLUGINS);
+        initializePluginRuntimeAfterHostReady();
 
         notifyProgress(progressListener, StartupStage.LOADING_MAIN);
         AppLauncher.markStartupCheckpoint("creating main frame on EDT");
         log.info("GUI startup stage: creating and initializing main frame on EDT");
+        long frameStartedAt = System.nanoTime();
         MainFrame mainFrame = createAndInitializeMainFrameOnEdt();
         AppLauncher.markStartupCheckpoint("main frame initialized");
         log.info("GUI startup stage complete: main frame initialized in {} ms",
-                (System.nanoTime() - startupStartedAt) / 1_000_000);
+                (System.nanoTime() - frameStartedAt) / 1_000_000);
 
         notifyProgress(progressListener, StartupStage.READY);
         return mainFrame;
@@ -122,15 +162,23 @@ public class StartupCoordinator {
     }
 
     private void showMainFrameAndLoadContentOnEdt(MainFrame mainFrame) {
+        showMainFrameOnEdt(mainFrame);
+        log.info("Scheduling main content loading");
+        // 先让轻量启动壳完成首帧显示，再切换到完整主内容，减少首屏阻塞。
+        SwingUtilities.invokeLater(mainFrame::loadMainContentAsync);
+    }
+
+    private void showMainFrameOnEdt(MainFrame mainFrame) {
         log.info("Showing main frame on EDT");
+        mainFrame.whenMainContentLoaded(() -> log.info("GUI main content ready in {} ms since launch entry",
+                (System.nanoTime() - launchStartedAtNanos) / 1_000_000));
         mainFrame.setVisible(true);
         AppLauncher.markStartupCheckpoint("main frame made visible");
         AppSingleInstanceController.registerReadyMainFrame(mainFrame);
         mainFrame.toFront();
         mainFrame.requestFocus();
-        log.info("Main frame is visible; scheduling main content loading");
-        // 先让轻量启动壳完成首帧显示，再切换到完整主内容，减少首屏阻塞。
-        SwingUtilities.invokeLater(mainFrame::loadMainContentAsync);
+        log.info("Main frame is visible in {} ms since launch entry",
+                (System.nanoTime() - launchStartedAtNanos) / 1_000_000);
     }
 
     public enum StartupStage {

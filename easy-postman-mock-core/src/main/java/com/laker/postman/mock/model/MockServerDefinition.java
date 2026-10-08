@@ -28,7 +28,6 @@ public class MockServerDefinition {
     private List<String> matchHeaderNames = new ArrayList<>();
     private String script = "";
     private String accessKey = "";
-    private boolean autoStart;
     private boolean recordCallLogs = true;
 
     public MockServerDefinition copy() {
@@ -47,7 +46,6 @@ public class MockServerDefinition {
         copy.matchHeaderNames = matchHeaderNames == null ? new ArrayList<>() : new ArrayList<>(matchHeaderNames);
         copy.script = script;
         copy.accessKey = accessKey;
-        copy.autoStart = autoStart;
         copy.recordCallLogs = recordCallLogs;
         return copy;
     }

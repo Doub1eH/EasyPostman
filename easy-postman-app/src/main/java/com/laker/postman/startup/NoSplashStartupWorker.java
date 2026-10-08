@@ -17,7 +17,7 @@ class NoSplashStartupWorker extends SwingWorker<MainFrame, Void> {
         try {
             return startupCoordinator.prepareMainFrameShell(null);
         } catch (Exception e) {
-            throw new IllegalStateException("Failed to prepare main frame", e);
+            throw new IllegalStateException("Failed to initialize GUI runtime", e);
         }
     }
 

@@ -179,6 +179,7 @@ class SplashWindow extends JFrame {
         setupWindowProperties();
 
         setVisible(true); // 显示窗口
+        log.info("Splash window is visible");
     }
 
     /**

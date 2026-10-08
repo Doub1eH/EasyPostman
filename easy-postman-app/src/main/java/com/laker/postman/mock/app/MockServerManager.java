@@ -12,7 +12,6 @@ import com.laker.postman.service.WorkspaceService;
 import com.laker.postman.util.I18nUtil;
 import com.laker.postman.util.MessageKeys;
 import lombok.RequiredArgsConstructor;
-import lombok.extern.slf4j.Slf4j;
 
 import java.io.IOException;
 import java.util.ArrayList;
@@ -22,7 +21,6 @@ import java.util.Map;
 import java.util.Objects;
 import java.util.Optional;
 
-@Slf4j
 @Component
 @RequiredArgsConstructor
 public class MockServerManager {
@@ -33,6 +31,7 @@ public class MockServerManager {
     private final List<MockServerDefinition> definitions = new ArrayList<>();
     private final Map<String, LocalMockServer> runtimes = new LinkedHashMap<>();
     private String workspaceId;
+    private long definitionsRevision;
 
     @PostConstruct
     public synchronized void initialize() {
@@ -42,6 +41,11 @@ public class MockServerManager {
     public synchronized List<MockServerDefinition> listDefinitions() {
         ensureCurrentWorkspace();
         return definitions.stream().map(MockServerDefinition::copy).toList();
+    }
+
+    public synchronized long definitionsRevision() {
+        ensureCurrentWorkspace();
+        return definitionsRevision;
     }
 
     public synchronized Optional<MockServerDefinition> findDefinition(String id) {
@@ -68,6 +72,7 @@ public class MockServerManager {
             definitions.add(copy);
         }
         persistenceService.save(definitions);
+        definitionsRevision++;
     }
 
     public synchronized void removeDefinition(String id) {
@@ -75,6 +80,7 @@ public class MockServerManager {
         stopInternal(id, true);
         definitions.removeIf(item -> Objects.equals(item.getId(), id));
         persistenceService.save(definitions);
+        definitionsRevision++;
     }
 
     public synchronized void start(String id) throws IOException {
@@ -88,19 +94,6 @@ public class MockServerManager {
         LocalMockServer runtime = new LocalMockServer(definition, routes, scriptExecutor);
         runtime.start();
         runtimes.put(id, runtime);
-    }
-
-    public synchronized void startAutoStartServers() {
-        ensureCurrentWorkspace();
-        for (MockServerDefinition definition : List.copyOf(definitions)) {
-            if (definition.isAutoStart() && !isRunning(definition.getId())) {
-                try {
-                    start(definition.getId());
-                } catch (Exception ex) {
-                    log.warn("Failed to auto-start mock server '{}'", definition.getName(), ex);
-                }
-            }
-        }
     }
 
     public synchronized void stop(String id) {
@@ -191,6 +184,7 @@ public class MockServerManager {
         if (removed) {
             definition.setStandaloneRoutes(routes);
             persistenceService.save(definitions);
+            definitionsRevision++;
         }
         return removed;
     }
@@ -221,8 +215,11 @@ public class MockServerManager {
 
     public synchronized void updateScript(String id, String script) {
         MockServerDefinition definition = requireDefinition(id);
-        definition.setScript(script == null ? "" : script);
+        String nextScript = script == null ? "" : script;
+        if (Objects.equals(definition.getScript(), nextScript)) return;
+        definition.setScript(nextScript);
         persistenceService.save(definitions);
+        definitionsRevision++;
         LocalMockServer runtime = runtimes.get(id);
         if (runtime != null) runtime.updateScript(definition.getScript());
     }
@@ -244,6 +241,7 @@ public class MockServerManager {
         workspaceId = currentWorkspaceId();
         definitions.clear();
         persistenceService.load().stream().map(this::normalizedCopy).forEach(definitions::add);
+        definitionsRevision++;
     }
 
     private MockServerDefinition normalizedCopy(MockServerDefinition source) {
@@ -292,6 +290,7 @@ public class MockServerManager {
         mutation.accept(routes);
         definition.setStandaloneRoutes(routes);
         persistenceService.save(definitions);
+        definitionsRevision++;
     }
 
     private static MockRoute copyRoute(MockRoute route) {

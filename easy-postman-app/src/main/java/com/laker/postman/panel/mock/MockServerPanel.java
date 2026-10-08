@@ -1,6 +1,7 @@
 package com.laker.postman.panel.mock;
 
 import com.formdev.flatlaf.FlatClientProperties;
+import com.formdev.flatlaf.extras.FlatSVGIcon;
 import com.laker.postman.common.UiSingletonPanel;
 import com.laker.postman.common.UiSingletonFactory;
 import com.laker.postman.common.component.AppToolWindowChrome;
@@ -14,14 +15,13 @@ import com.laker.postman.common.component.button.EditButton;
 import com.laker.postman.common.component.button.ModernButtonFactory;
 import com.laker.postman.common.component.button.PlusButton;
 import com.laker.postman.common.component.button.RefreshButton;
-import com.laker.postman.common.component.button.StartButton;
-import com.laker.postman.common.component.button.StopButton;
 import com.laker.postman.common.component.notification.NotificationCenter;
 import com.laker.postman.common.constants.ModernColors;
 import com.laker.postman.ioc.BeanFactory;
 import com.laker.postman.mock.app.MockCollectionChoice;
 import com.laker.postman.mock.app.MockCollectionRouteProvider;
 import com.laker.postman.mock.app.MockNetworkAddressResolver;
+import com.laker.postman.mock.app.MockRouteConflicts;
 import com.laker.postman.mock.app.MockRouteEntry;
 import com.laker.postman.mock.app.MockServerManager;
 import com.laker.postman.mock.model.MockCallLog;
@@ -40,12 +40,15 @@ import org.fife.ui.rsyntaxtextarea.SyntaxConstants;
 
 import javax.swing.BorderFactory;
 import javax.swing.DefaultListModel;
+import javax.swing.Icon;
 import javax.swing.JButton;
 import javax.swing.JComponent;
 import javax.swing.JLabel;
 import javax.swing.JList;
+import javax.swing.JMenuItem;
 import javax.swing.JOptionPane;
 import javax.swing.JPanel;
+import javax.swing.JPopupMenu;
 import javax.swing.JScrollPane;
 import javax.swing.JSplitPane;
 import javax.swing.JTabbedPane;
@@ -56,13 +59,16 @@ import javax.swing.ListCellRenderer;
 import javax.swing.SwingConstants;
 import javax.swing.Timer;
 import javax.swing.table.AbstractTableModel;
+import javax.swing.table.DefaultTableCellRenderer;
 import java.awt.BorderLayout;
 import java.awt.CardLayout;
+import java.awt.Color;
 import java.awt.Component;
 import java.awt.Cursor;
 import java.awt.Dimension;
 import java.awt.Font;
 import java.awt.Insets;
+import java.awt.Rectangle;
 import java.awt.Toolkit;
 import java.awt.datatransfer.StringSelection;
 import java.awt.event.MouseAdapter;
@@ -72,10 +78,9 @@ import java.time.format.DateTimeFormatter;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
-import java.util.LinkedHashMap;
-import java.util.LinkedHashSet;
 import java.util.Objects;
 import java.util.Set;
+import java.util.function.Supplier;
 
 /**
  * Local Mock Server management surface, hosted as a top-level sidebar menu.
@@ -83,6 +88,8 @@ import java.util.Set;
 public class MockServerPanel extends UiSingletonPanel {
     private static final String EMPTY_CARD = "empty";
     private static final String DETAIL_CARD = "detail";
+    private static final int LOGS_TAB_INDEX = 2;
+    private static final int STATE_TAB_INDEX = 3;
     private static final DateTimeFormatter LOG_TIME_FORMAT = DateTimeFormatter.ofPattern("HH:mm:ss.SSS")
             .withZone(ZoneId.systemDefault());
 
@@ -90,7 +97,20 @@ public class MockServerPanel extends UiSingletonPanel {
     private final MockCollectionRouteProvider routeProvider = BeanFactory.getBean(MockCollectionRouteProvider.class);
     private final MockRouteEditorController routeEditorController = new MockRouteEditorController(routeProvider, manager);
     private final DefaultListModel<MockServerDefinition> serverListModel = new DefaultListModel<>();
-    private final JList<MockServerDefinition> serverList = new JList<>(serverListModel);
+    private final JList<MockServerDefinition> serverList = new JList<>(serverListModel) {
+        @Override
+        public String getToolTipText(MouseEvent event) {
+            int row = locationToIndex(event.getPoint());
+            Rectangle bounds = row < 0 ? null : getCellBounds(row, row);
+            if (bounds == null || !bounds.contains(event.getPoint())) return null;
+            MockServerDefinition server = getModel().getElementAt(row);
+            String status = I18nUtil.getMessage(manager.isRunning(server.getId())
+                    ? MessageKeys.MOCK_SERVER_STATUS_RUNNING
+                    : MessageKeys.MOCK_SERVER_STATUS_STOPPED);
+            return server.getName() + " — " + status + " — "
+                    + MockNetworkAddressResolver.accessUrl(server, server.getPort());
+        }
+    };
     private final RouteTableModel routeTableModel = new RouteTableModel();
     private final LogTableModel logTableModel = new LogTableModel();
     private final StateTableModel stateTableModel = new StateTableModel();
@@ -100,8 +120,10 @@ public class MockServerPanel extends UiSingletonPanel {
     private final RSyntaxTextArea scriptEditor = new FallbackAwareRSyntaxTextArea(12, 60);
     private final JTextArea logDetail = new JTextArea();
     private final JLabel baseUrlLabel = new JLabel();
-    private final JLabel statusLabel = new JLabel();
     private final JLabel exampleCountLabel = new JLabel();
+    private final Icon runningStatusIcon = semanticIcon("icons/check.svg", ModernColors::getSuccess);
+    private final Icon stoppedStatusIcon = semanticIcon("icons/nocheck.svg", ModernColors::getTextSecondary);
+    private MockRouteConflicts routeConflicts = new MockRouteConflicts(0, Set.of());
     private final Timer refreshTimer = new Timer(1_000, event -> refreshRuntimeData());
     private final CardLayout detailCardLayout = new CardLayout();
     private final JPanel detailCards = new JPanel(detailCardLayout);
@@ -110,8 +132,9 @@ public class MockServerPanel extends UiSingletonPanel {
     private JButton emptyAddButton;
     private JButton editButton;
     private JButton deleteButton;
-    private JButton startButton;
-    private JButton stopButton;
+    private JButton runToggleButton;
+    private final Icon startActionIcon = IconUtil.createThemed("icons/start.svg", 20, 20);
+    private final Icon stopActionIcon = IconUtil.createThemed("icons/stop.svg", 20, 20);
     private JButton refreshButton;
     private JButton copyButton;
     private JButton deploymentButton;
@@ -120,8 +143,13 @@ public class MockServerPanel extends UiSingletonPanel {
     private JButton addResponseButton;
     private JButton editRouteButton;
     private JButton deleteResponseButton;
+    private JButton conflictButton;
     private JLabel detailTitleLabel;
+    private JTabbedPane detailTabs;
     private boolean loadingScript;
+    private boolean loadingDefinitions;
+    private boolean listenersRegistered;
+    private long displayedDefinitionsRevision = -1;
 
     @Override
     protected void initUI() {
@@ -138,7 +166,6 @@ public class MockServerPanel extends UiSingletonPanel {
     @Override
     public void addNotify() {
         super.addNotify();
-        manager.startAutoStartServers();
         refreshRuntimeData();
         refreshTimer.start();
     }
@@ -175,6 +202,7 @@ public class MockServerPanel extends UiSingletonPanel {
                 I18nUtil.getMessage(MessageKeys.MOCK_SERVER_LIST_TITLE), addButton), BorderLayout.NORTH);
 
         serverList.setSelectionMode(ListSelectionModel.SINGLE_SELECTION);
+        serverList.setToolTipText("");
         serverList.setCellRenderer(new ServerRenderer());
         serverList.setFixedCellHeight(52);
         JScrollPane serverScroll = new JScrollPane(serverList);
@@ -227,13 +255,13 @@ public class MockServerPanel extends UiSingletonPanel {
         ToolWindowSurfaceStyle.applyCard(detail);
         detail.add(createDetailHeader(), BorderLayout.NORTH);
 
-        JTabbedPane tabs = new JTabbedPane(SwingConstants.TOP);
-        ToolWindowSurfaceStyle.applyTabbedPaneCard(tabs);
-        tabs.addTab(I18nUtil.getMessage(MessageKeys.MOCK_SERVER_ROUTES), createRoutesPanel());
-        tabs.addTab(I18nUtil.getMessage(MessageKeys.MOCK_SERVER_GLOBAL_SCRIPT), createScriptPanel());
-        tabs.addTab(I18nUtil.getMessage(MessageKeys.MOCK_SERVER_LOGS), createLogsPanel());
-        tabs.addTab(I18nUtil.getMessage(MessageKeys.MOCK_SERVER_STATE), createStatePanel());
-        detail.add(tabs, BorderLayout.CENTER);
+        detailTabs = new JTabbedPane(SwingConstants.TOP);
+        ToolWindowSurfaceStyle.applyTabbedPaneCard(detailTabs);
+        detailTabs.addTab(I18nUtil.getMessage(MessageKeys.MOCK_SERVER_ROUTES), createRoutesPanel());
+        detailTabs.addTab(I18nUtil.getMessage(MessageKeys.MOCK_SERVER_GLOBAL_SCRIPT), createScriptPanel());
+        detailTabs.addTab(I18nUtil.getMessage(MessageKeys.MOCK_SERVER_LOGS), createLogsPanel());
+        detailTabs.addTab(I18nUtil.getMessage(MessageKeys.MOCK_SERVER_STATE), createStatePanel());
+        detail.add(detailTabs, BorderLayout.CENTER);
         return detail;
     }
 
@@ -243,57 +271,48 @@ public class MockServerPanel extends UiSingletonPanel {
 
         JPanel identity = new JPanel(new MigLayout(
                 "insets 8 10 6 10, fillx, novisualpadding",
-                "[grow,fill][]",
-                "[]2[]"
+                "[grow,fill]12[shrink]4[]",
+                "[]"
         ));
         ToolWindowSurfaceStyle.applySectionHeader(identity);
         detailTitleLabel = new JLabel();
         detailTitleLabel.setFont(FontsUtil.getDefaultFontWithOffset(Font.BOLD, 1));
-        statusLabel.setFont(FontsUtil.getDefaultFontWithOffset(Font.PLAIN, -1));
-        identity.add(detailTitleLabel, "growx,wmin 0");
-        identity.add(statusLabel, "alignx right,wrap");
+        identity.add(detailTitleLabel, "wmin 0");
 
         baseUrlLabel.setFont(FontsUtil.getDefaultFontWithOffset(Font.PLAIN, -1));
         baseUrlLabel.setForeground(ModernColors.getTextSecondary());
         baseUrlLabel.setToolTipText(I18nUtil.getMessage(MessageKeys.MOCK_SERVER_LOCAL_HINT));
         copyButton = new CopyButton();
         copyButton.setToolTipText(I18nUtil.getMessage(MessageKeys.MOCK_SERVER_COPY_URL));
-        JPanel address = new JPanel(new BorderLayout(6, 0));
-        address.setOpaque(false);
-        address.add(baseUrlLabel, BorderLayout.CENTER);
-        address.add(copyButton, BorderLayout.EAST);
-        identity.add(address, "span 2,growx,wmin 0");
+        copyButton.getAccessibleContext().setAccessibleName(copyButton.getToolTipText());
+        identity.add(baseUrlLabel, "wmin 0,alignx right");
+        identity.add(copyButton);
 
-        startButton = new StartButton();
-        stopButton = new StopButton();
+        runToggleButton = toolbarButton(CommonI18n.get(CommonMessageKeys.BUTTON_START), "icons/start.svg");
+        runToggleButton.setIcon(startActionIcon);
         refreshButton = new RefreshButton();
         refreshButton.setToolTipText(I18nUtil.getMessage(MessageKeys.MOCK_SERVER_REFRESH));
+        refreshButton.getAccessibleContext().setAccessibleName(refreshButton.getToolTipText());
         editButton = new EditButton();
         deleteButton = toolbarButton(CommonI18n.get(CommonMessageKeys.BUTTON_DELETE), "icons/delete.svg");
-        deploymentButton = ModernButtonFactory.createCompactButton(
-                I18nUtil.getMessage(MessageKeys.MOCK_SERVER_COPY_DEPLOY_COMMAND), false, "icons/code.svg");
+        deploymentButton = toolbarButton(
+                I18nUtil.getMessage(MessageKeys.MOCK_SERVER_COPY_DEPLOY_COMMAND), "icons/code.svg");
 
         JPanel actions = new JPanel(new BorderLayout());
         ToolWindowSurfaceStyle.applySectionHeader(actions);
         ToolWindowSurfaceStyle.applyToolWindowToolbarSeparator(actions, 1, 0, 0, 0);
-        actions.add(ToolWindowActionToolbar.left(startButton, stopButton, refreshButton), BorderLayout.WEST);
+        actions.add(ToolWindowActionToolbar.left(runToggleButton, refreshButton), BorderLayout.WEST);
         actions.add(ToolWindowActionToolbar.right(deploymentButton, editButton, deleteButton), BorderLayout.EAST);
-        exampleCountLabel.setFont(FontsUtil.getDefaultFontWithOffset(Font.PLAIN, -1));
-        exampleCountLabel.setForeground(ModernColors.getTextSecondary());
-        JPanel footer = new JPanel(new BorderLayout());
-        footer.setOpaque(false);
-        footer.add(actions, BorderLayout.CENTER);
-        exampleCountLabel.setBorder(BorderFactory.createEmptyBorder(0, 0, 0, 10));
-        footer.add(exampleCountLabel, BorderLayout.EAST);
 
         header.add(identity, BorderLayout.NORTH);
-        header.add(footer, BorderLayout.SOUTH);
+        header.add(actions, BorderLayout.SOUTH);
         return header;
     }
 
     private JButton toolbarButton(String tooltip, String iconPath) {
         JButton button = new JButton(IconUtil.createThemed(iconPath, IconUtil.SIZE_SMALL, IconUtil.SIZE_SMALL));
         button.setToolTipText(tooltip);
+        button.getAccessibleContext().setAccessibleName(tooltip);
         button.setFocusable(false);
         button.setCursor(Cursor.getPredefinedCursor(Cursor.HAND_CURSOR));
         button.setMargin(new Insets(0, 0, 0, 0));
@@ -303,6 +322,16 @@ public class MockServerPanel extends UiSingletonPanel {
 
     private JComponent createRoutesPanel() {
         configureTable(routeTable);
+        routeTable.getColumnModel().getColumn(0).setMaxWidth(80);
+        routeTable.getColumnModel().getColumn(5).setMaxWidth(95);
+        routeTable.getColumnModel().getColumn(6).setMaxWidth(90);
+        routeTable.getColumnModel().getColumn(1).setPreferredWidth(200);
+        routeTable.getColumnModel().getColumn(4).setPreferredWidth(180);
+        routeTable.getColumnModel().getColumn(4).setMaxWidth(260);
+        routeTable.getColumnModel().getColumn(0).setCellRenderer(new RouteMethodRenderer());
+        routeTable.getColumnModel().getColumn(4).setCellRenderer(new RouteResponseRenderer());
+        routeTable.getColumnModel().getColumn(5).setCellRenderer(new RouteStatusRenderer());
+        routeTable.getColumnModel().getColumn(6).setCellRenderer(new RouteModeRenderer());
         JScrollPane scrollPane = new JScrollPane(routeTable);
         ToolWindowSurfaceStyle.applyTableScrollPaneCard(scrollPane, routeTable);
 
@@ -314,11 +343,30 @@ public class MockServerPanel extends UiSingletonPanel {
         editRouteButton.setToolTipText(I18nUtil.getMessage(MessageKeys.MOCK_SERVER_ROUTE_EDIT));
         deleteResponseButton = toolbarButton(
                 I18nUtil.getMessage(MessageKeys.MOCK_SERVER_ROUTE_DELETE_RESPONSE), "icons/delete.svg");
+        Dimension routeActionSize = new Dimension(ToolWindowActionToolbar.ACTION_SIZE,
+                ToolWindowActionToolbar.ACTION_SIZE);
+        editRouteButton.setPreferredSize(routeActionSize);
+        deleteResponseButton.setPreferredSize(routeActionSize);
+        exampleCountLabel.setFont(FontsUtil.getDefaultFontWithOffset(Font.PLAIN, -1));
+        exampleCountLabel.setForeground(ModernColors.getTextSecondary());
+        conflictButton = toolbarButton("", "icons/warning.svg");
+        conflictButton.setIcon(semanticIcon("icons/warning.svg", ModernColors::getWarning));
+        conflictButton.setFont(FontsUtil.getDefaultFontWithOffset(Font.PLAIN, -1));
+        conflictButton.setForeground(ModernColors.getWarning());
+        conflictButton.setFocusable(true);
+        conflictButton.setVisible(false);
 
-        JPanel toolbar = new JPanel(new BorderLayout());
+        JPanel toolbar = new JPanel(new MigLayout(
+                "insets 4 8 4 8,fillx,novisualpadding,hidemode 3",
+                "[]4[][grow,fill]8[]8[]8[]4[]", "[]"));
         ToolWindowSurfaceStyle.applySectionHeader(toolbar);
-        toolbar.add(ToolWindowActionToolbar.left(addRouteButton, addResponseButton), BorderLayout.WEST);
-        toolbar.add(ToolWindowActionToolbar.right(editRouteButton, deleteResponseButton), BorderLayout.EAST);
+        toolbar.add(addRouteButton);
+        toolbar.add(addResponseButton);
+        toolbar.add(new JLabel(), "growx");
+        toolbar.add(exampleCountLabel, "wmin 0");
+        toolbar.add(conflictButton);
+        toolbar.add(editRouteButton);
+        toolbar.add(deleteResponseButton);
 
         JPanel panel = createTabContentPanel();
         panel.add(toolbar, BorderLayout.NORTH);
@@ -426,14 +474,23 @@ public class MockServerPanel extends UiSingletonPanel {
     @Override
     protected void registerListeners() {
         serverList.addListSelectionListener(event -> {
-            if (!event.getValueIsAdjusting()) selectServer();
+            if (!loadingDefinitions && !event.getValueIsAdjusting()) selectServer();
         });
+        serverList.addMouseListener(new MouseAdapter() {
+            @Override public void mousePressed(MouseEvent event) { showServerPopup(event); }
+            @Override public void mouseReleased(MouseEvent event) { showServerPopup(event); }
+        });
+        detailTabs.addChangeListener(event -> refreshRuntimeData());
         addButton.addActionListener(event -> createServer());
         emptyAddButton.addActionListener(event -> createServer());
         editButton.addActionListener(event -> editServer());
         deleteButton.addActionListener(event -> deleteServer());
-        startButton.addActionListener(event -> startServer());
-        stopButton.addActionListener(event -> stopServer());
+        runToggleButton.addActionListener(event -> {
+            MockServerDefinition server = selected();
+            if (server == null) return;
+            if (manager.isRunning(server.getId())) stopServer();
+            else startServer();
+        });
         refreshButton.addActionListener(event -> refreshExamples());
         copyButton.addActionListener(event -> copyUrl());
         deploymentButton.addActionListener(event -> copyDeploymentCommand());
@@ -442,10 +499,13 @@ public class MockServerPanel extends UiSingletonPanel {
         addResponseButton.addActionListener(event -> addMockResponse());
         editRouteButton.addActionListener(event -> editMockRoute());
         deleteResponseButton.addActionListener(event -> deleteMockResponse());
+        conflictButton.addActionListener(event -> selectNextConflict());
         routeTable.getSelectionModel().addListSelectionListener(event -> {
             if (!event.getValueIsAdjusting()) updateRouteButtonState();
         });
         routeTable.addMouseListener(new MouseAdapter() {
+            @Override public void mousePressed(MouseEvent event) { showRoutePopup(event); }
+            @Override public void mouseReleased(MouseEvent event) { showRoutePopup(event); }
             @Override
             public void mouseClicked(MouseEvent event) {
                 if (event.getClickCount() == 2 && event.getButton() == MouseEvent.BUTTON1) editMockRoute();
@@ -454,9 +514,94 @@ public class MockServerPanel extends UiSingletonPanel {
         logTable.getSelectionModel().addListSelectionListener(event -> {
             if (!event.getValueIsAdjusting()) showSelectedLog();
         });
-        // initUI restores the list selection before listeners exist. Synchronize the detail card
-        // once listener registration is complete so an existing server never shows the empty state.
+        listenersRegistered = true;
         selectServer();
+    }
+
+    private void showServerPopup(MouseEvent event) {
+        if (!event.isPopupTrigger()) return;
+        int row = serverList.locationToIndex(event.getPoint());
+        Rectangle bounds = row < 0 ? null : serverList.getCellBounds(row, row);
+        if (bounds == null || !bounds.contains(event.getPoint())) {
+            JPopupMenu menu = new JPopupMenu();
+            ToolWindowSurfaceStyle.applyPopupMenuCard(menu);
+            menu.add(popupItem(I18nUtil.getMessage(MessageKeys.MOCK_SERVER_CREATE),
+                    "icons/plus.svg", this::createServer));
+            menu.show(serverList, event.getX(), event.getY());
+            return;
+        }
+        serverList.setSelectedIndex(row);
+        MockServerDefinition server = selected();
+        if (server == null) return;
+
+        boolean running = manager.isRunning(server.getId());
+        JPopupMenu menu = new JPopupMenu();
+        ToolWindowSurfaceStyle.applyPopupMenuCard(menu);
+        JMenuItem toggle = popupItem(CommonI18n.get(running
+                ? CommonMessageKeys.BUTTON_STOP : CommonMessageKeys.BUTTON_START),
+                running ? "icons/stop.svg" : "icons/start.svg",
+                running ? this::stopServer : this::startServer);
+        menu.add(toggle);
+        JMenuItem edit = popupItem(CommonI18n.get(CommonMessageKeys.BUTTON_EDIT),
+                "icons/edit.svg", this::editServer);
+        edit.setEnabled(!running);
+        menu.add(edit);
+        menu.add(popupItem(I18nUtil.getMessage(MessageKeys.MOCK_SERVER_COPY_URL),
+                "icons/copy.svg", this::copyUrl));
+        menu.add(popupItem(I18nUtil.getMessage(MessageKeys.MOCK_SERVER_COPY_DEPLOY_COMMAND),
+                "icons/code.svg", this::copyDeploymentCommand));
+        menu.addSeparator();
+        menu.add(popupItem(CommonI18n.get(CommonMessageKeys.BUTTON_DELETE),
+                "icons/delete.svg", this::deleteServer));
+        menu.show(serverList, event.getX(), event.getY());
+    }
+
+    private void showRoutePopup(MouseEvent event) {
+        if (!event.isPopupTrigger()) return;
+        int row = routeTable.rowAtPoint(event.getPoint());
+        if (row < 0) {
+            if (selected() == null) return;
+            JPopupMenu menu = new JPopupMenu();
+            ToolWindowSurfaceStyle.applyPopupMenuCard(menu);
+            menu.add(popupItem(I18nUtil.getMessage(MessageKeys.MOCK_SERVER_ROUTE_ADD),
+                    "icons/plus.svg", this::createMockRoute));
+            menu.show(routeTable, event.getX(), event.getY());
+            return;
+        }
+        routeTable.setRowSelectionInterval(row, row);
+        MockRouteEntry entry = selectedRouteEntry();
+        if (entry == null) return;
+
+        JPopupMenu menu = new JPopupMenu();
+        ToolWindowSurfaceStyle.applyPopupMenuCard(menu);
+        menu.add(popupItem(I18nUtil.getMessage(entry.standalone()
+                        ? MessageKeys.MOCK_SERVER_ROUTE_EDIT_STANDALONE
+                        : entry.configured() ? MessageKeys.MOCK_SERVER_ROUTE_EDIT
+                        : MessageKeys.MOCK_SERVER_ROUTE_ADD_RESPONSE),
+                entry.configured() ? "icons/edit.svg" : "icons/plus.svg", this::editMockRoute));
+        if (!entry.standalone() && entry.configured()) {
+            menu.add(popupItem(I18nUtil.getMessage(MessageKeys.MOCK_SERVER_ROUTE_ADD_RESPONSE),
+                    "icons/plus.svg", this::addMockResponse));
+        }
+        if (entry.configured()) {
+            menu.addSeparator();
+            menu.add(popupItem(I18nUtil.getMessage(entry.standalone()
+                            ? MessageKeys.MOCK_SERVER_ROUTE_DELETE_STANDALONE
+                            : MessageKeys.MOCK_SERVER_ROUTE_DELETE_RESPONSE),
+                    "icons/delete.svg", this::deleteMockResponse));
+        }
+        menu.show(routeTable, event.getX(), event.getY());
+    }
+
+    private JMenuItem popupItem(String label, String iconPath, Runnable action) {
+        JMenuItem item = new JMenuItem(label, IconUtil.createThemed(iconPath, 16, 16));
+        item.addActionListener(event -> action.run());
+        return item;
+    }
+
+    private static FlatSVGIcon semanticIcon(String path, Supplier<Color> color) {
+        return IconUtil.create(path, 16, 16)
+                .setColorFilter(new FlatSVGIcon.ColorFilter(ignored -> color.get()));
     }
 
     private void createServer() {
@@ -687,18 +832,27 @@ public class MockServerPanel extends UiSingletonPanel {
 
     private void reloadDefinitions(String preferredId) {
         String selectedId = preferredId != null ? preferredId : selectedId();
-        serverListModel.clear();
-        manager.listDefinitions().forEach(serverListModel::addElement);
-        if (selectedId != null) {
-            for (int i = 0; i < serverListModel.size(); i++) {
-                if (Objects.equals(serverListModel.get(i).getId(), selectedId)) {
-                    serverList.setSelectedIndex(i);
-                    return;
+        List<MockServerDefinition> definitions = manager.listDefinitions();
+        displayedDefinitionsRevision = manager.definitionsRevision();
+        loadingDefinitions = true;
+        try {
+            serverListModel.clear();
+            definitions.forEach(serverListModel::addElement);
+            int selectedIndex = -1;
+            if (selectedId != null) {
+                for (int i = 0; i < serverListModel.size(); i++) {
+                    if (Objects.equals(serverListModel.get(i).getId(), selectedId)) {
+                        selectedIndex = i;
+                        break;
+                    }
                 }
             }
+            if (selectedIndex < 0 && !serverListModel.isEmpty()) selectedIndex = 0;
+            serverList.setSelectedIndex(selectedIndex);
+        } finally {
+            loadingDefinitions = false;
         }
-        if (!serverListModel.isEmpty()) serverList.setSelectedIndex(0);
-        else selectServer();
+        if (listenersRegistered) selectServer();
     }
 
     private void selectServer() {
@@ -718,56 +872,53 @@ public class MockServerPanel extends UiSingletonPanel {
         MockServerDefinition selected = selected();
         if (selected == null) {
             detailCardLayout.show(detailCards, EMPTY_CARD);
-            routeTableModel.setRows(List.of());
+            routeConflicts = new MockRouteConflicts(0, Set.of());
+            routeTableModel.setRows(List.of(), routeConflicts.rowIndexes());
             logTableModel.setRows(List.of());
             stateTableModel.setRows(Map.of());
             baseUrlLabel.setText("");
             exampleCountLabel.setText("");
-            exampleCountLabel.setForeground(ModernColors.getTextSecondary());
-            exampleCountLabel.setToolTipText(null);
+            conflictButton.setVisible(false);
             updateButtonState(false, false);
-            statusLabel.setText(I18nUtil.getMessage(MessageKeys.MOCK_SERVER_STATUS_STOPPED));
-            statusLabel.setForeground(ModernColors.getTextSecondary());
             return;
         }
         detailCardLayout.show(detailCards, DETAIL_CARD);
         detailTitleLabel.setText(selected.getName());
         detailTitleLabel.setToolTipText(selected.getName());
         List<MockRouteEntry> routes = manager.routeEntries(selected.getId());
-        routeTableModel.setRows(routes);
+        routeConflicts = MockRouteConflicts.from(routes);
+        routeTableModel.setRows(routes, routeConflicts.rowIndexes());
         long configured = routes.stream().filter(MockRouteEntry::configured).count();
-        long conflicts = possibleRouteConflictCount(routes);
         String routeCount = I18nUtil.getMessage(
                 MessageKeys.MOCK_SERVER_ROUTE_COUNT, routes.size(), configured);
-        exampleCountLabel.setText(conflicts == 0
-                ? routeCount
-                : routeCount + "  ·  " + I18nUtil.getMessage(MessageKeys.MOCK_SERVER_ROUTE_CONFLICTS, conflicts));
-        exampleCountLabel.setForeground(conflicts == 0
-                ? ModernColors.getTextSecondary() : ModernColors.getWarning());
-        exampleCountLabel.setToolTipText(conflicts == 0 ? null
-                : I18nUtil.getMessage(MessageKeys.MOCK_SERVER_ROUTE_CONFLICTS_HINT));
-        baseUrlLabel.setText(manager.baseUrl(selected.getId()));
-        baseUrlLabel.setToolTipText(manager.baseUrl(selected.getId()));
+        exampleCountLabel.setText(routeCount);
+        exampleCountLabel.setToolTipText(routeCount);
+        String conflictCount = I18nUtil.getMessage(
+                MessageKeys.MOCK_SERVER_ROUTE_CONFLICTS, routeConflicts.groupCount());
+        conflictButton.setText(String.valueOf(routeConflicts.groupCount()));
+        conflictButton.setToolTipText(conflictCount + " — "
+                + I18nUtil.getMessage(MessageKeys.MOCK_SERVER_ROUTE_CONFLICTS_HINT)
+                + " " + I18nUtil.getMessage(MessageKeys.MOCK_SERVER_ROUTE_CONFLICTS_ACTION_HINT));
+        conflictButton.getAccessibleContext().setAccessibleName(conflictCount);
+        conflictButton.setVisible(routeConflicts.groupCount() > 0);
         refreshRuntimeData();
     }
 
     private void refreshRuntimeData() {
-        List<MockServerDefinition> currentDefinitions = manager.listDefinitions();
-        if (!sameDefinitions(currentDefinitions)) {
+        if (manager.definitionsRevision() != displayedDefinitionsRevision) {
             reloadDefinitions(null);
             return;
         }
         MockServerDefinition selected = selected();
         if (selected == null) return;
         boolean running = manager.isRunning(selected.getId());
-        statusLabel.setText(I18nUtil.getMessage(running
-                ? MessageKeys.MOCK_SERVER_STATUS_RUNNING
-                : MessageKeys.MOCK_SERVER_STATUS_STOPPED));
-        statusLabel.setForeground(running ? ModernColors.getSuccess() : ModernColors.getTextSecondary());
-        baseUrlLabel.setText(manager.baseUrl(selected.getId()));
-        baseUrlLabel.setToolTipText(manager.baseUrl(selected.getId()));
-        refreshLogs(selected.getId());
-        stateTableModel.setRows(manager.state(selected.getId()));
+        String baseUrl = manager.baseUrl(selected.getId());
+        baseUrlLabel.setText(baseUrl);
+        baseUrlLabel.setToolTipText(baseUrl);
+        if (detailTabs.getSelectedIndex() == LOGS_TAB_INDEX) refreshLogs(selected.getId());
+        if (detailTabs.getSelectedIndex() == STATE_TAB_INDEX) {
+            stateTableModel.setRows(manager.state(selected.getId()));
+        }
         updateButtonState(true, running);
         serverList.repaint();
     }
@@ -788,19 +939,15 @@ public class MockServerPanel extends UiSingletonPanel {
         }
     }
 
-    private boolean sameDefinitions(List<MockServerDefinition> definitions) {
-        if (definitions.size() != serverListModel.size()) return false;
-        for (int i = 0; i < definitions.size(); i++) {
-            if (!definitions.get(i).equals(serverListModel.get(i))) return false;
-        }
-        return true;
-    }
-
     private void updateButtonState(boolean selected, boolean running) {
         editButton.setEnabled(selected && !running);
         deleteButton.setEnabled(selected);
-        startButton.setEnabled(selected && !running);
-        stopButton.setEnabled(selected && running);
+        runToggleButton.setEnabled(selected);
+        runToggleButton.setIcon(running ? stopActionIcon : startActionIcon);
+        String runAction = CommonI18n.get(running
+                ? CommonMessageKeys.BUTTON_STOP : CommonMessageKeys.BUTTON_START);
+        runToggleButton.setToolTipText(runAction);
+        runToggleButton.getAccessibleContext().setAccessibleName(runAction);
         refreshButton.setEnabled(selected);
         copyButton.setEnabled(selected);
         deploymentButton.setEnabled(selected);
@@ -813,9 +960,18 @@ public class MockServerPanel extends UiSingletonPanel {
     private void updateRouteButtonState() {
         MockRouteEntry entry = selectedRouteEntry();
         boolean hasEntry = selected() != null && entry != null;
-        if (addResponseButton != null) addResponseButton.setEnabled(hasEntry && !entry.standalone());
-        if (editRouteButton != null) editRouteButton.setEnabled(hasEntry);
-        if (deleteResponseButton != null) deleteResponseButton.setEnabled(hasEntry && entry.configured());
+        if (addResponseButton != null) {
+            addResponseButton.setVisible(hasEntry && !entry.standalone());
+            addResponseButton.setEnabled(hasEntry && !entry.standalone());
+        }
+        if (editRouteButton != null) {
+            editRouteButton.setVisible(hasEntry && entry.configured());
+            editRouteButton.setEnabled(hasEntry && entry.configured());
+        }
+        if (deleteResponseButton != null) {
+            deleteResponseButton.setVisible(hasEntry && entry.configured());
+            deleteResponseButton.setEnabled(hasEntry && entry.configured());
+        }
         if (editRouteButton != null) editRouteButton.setToolTipText(I18nUtil.getMessage(
                 hasEntry && entry.standalone()
                         ? MessageKeys.MOCK_SERVER_ROUTE_EDIT_STANDALONE
@@ -875,23 +1031,18 @@ public class MockServerPanel extends UiSingletonPanel {
         return port;
     }
 
-    private long possibleRouteConflictCount(List<MockRouteEntry> routes) {
-        Map<String, Set<String>> ownersByRoute = new LinkedHashMap<>();
-        for (MockRouteEntry route : routes) {
-            if (!route.configured()) continue;
-            String path = route.path() == null || route.path().isBlank() ? "/" : route.path().trim();
-            if (!path.startsWith("/")) path = "/" + path;
-            while (path.length() > 1 && path.endsWith("/")) {
-                path = path.substring(0, path.length() - 1);
-            }
-            String method = route.method() == null ? "" : route.method().toUpperCase(java.util.Locale.ROOT);
-            String key = method + " " + path;
-            String owner = route.standalone()
-                    ? "standalone:" + route.routeId()
-                    : route.sourceCollectionId() + ":" + route.requestId();
-            ownersByRoute.computeIfAbsent(key, ignored -> new LinkedHashSet<>()).add(owner);
-        }
-        return ownersByRoute.values().stream().filter(owners -> owners.size() > 1).count();
+    private void selectNextConflict() {
+        List<Integer> views = routeConflicts.rowIndexes().stream()
+                .map(routeTable::convertRowIndexToView)
+                .filter(index -> index >= 0)
+                .sorted()
+                .toList();
+        if (views.isEmpty()) return;
+        int selectedRow = routeTable.getSelectedRow();
+        int next = views.stream().filter(index -> index > selectedRow).findFirst().orElse(views.get(0));
+        routeTable.getSelectionModel().setSelectionInterval(next, next);
+        routeTable.scrollRectToVisible(routeTable.getCellRect(next, 0, true));
+        routeTable.requestFocusInWindow();
     }
 
     private MockServerDefinition selected() {
@@ -916,6 +1067,7 @@ public class MockServerPanel extends UiSingletonPanel {
     }
 
     private final class ServerRenderer extends JPanel implements ListCellRenderer<MockServerDefinition> {
+        private final JLabel serverIcon = new JLabel(IconUtil.createThemed("icons/mock-server.svg", 18, 18));
         private final JLabel titleLabel = new JLabel();
         private final JLabel stateLabel = new JLabel();
         private final JLabel addressLabel = new JLabel();
@@ -923,16 +1075,16 @@ public class MockServerPanel extends UiSingletonPanel {
         private ServerRenderer() {
             setLayout(new MigLayout(
                     "insets 5 8 5 8,fillx,novisualpadding",
-                    "[grow,fill][]",
+                    "[18]8[grow,fill][]",
                     "[]1[]"
             ));
             setOpaque(true);
             titleLabel.setFont(FontsUtil.getDefaultFontWithOffset(Font.BOLD, -1));
-            stateLabel.setFont(FontsUtil.getDefaultFontWithOffset(Font.PLAIN, -2));
             addressLabel.setFont(FontsUtil.getDefaultFontWithOffset(Font.PLAIN, -2));
-            add(titleLabel, "growx,wmin 0");
-            add(stateLabel, "alignx right,wrap");
-            add(addressLabel, "span 2,growx,wmin 0");
+            add(serverIcon, "cell 0 0,span 1 2,aligny center");
+            add(titleLabel, "cell 1 0,growx,wmin 0");
+            add(addressLabel, "cell 1 1,growx,wmin 0");
+            add(stateLabel, "cell 2 0,span 1 2,aligny center");
         }
 
         @Override
@@ -943,26 +1095,103 @@ public class MockServerPanel extends UiSingletonPanel {
                                                       boolean cellHasFocus) {
             boolean running = definition != null && manager.isRunning(definition.getId());
             titleLabel.setText(definition == null ? "" : definition.getName());
-            stateLabel.setText(I18nUtil.getMessage(running
+            String status = I18nUtil.getMessage(running
                     ? MessageKeys.MOCK_SERVER_STATUS_RUNNING
-                    : MessageKeys.MOCK_SERVER_STATUS_STOPPED));
+                    : MessageKeys.MOCK_SERVER_STATUS_STOPPED);
+            stateLabel.setText(null);
+            stateLabel.setIcon(running ? runningStatusIcon : stoppedStatusIcon);
+            stateLabel.setToolTipText(status);
+            stateLabel.getAccessibleContext().setAccessibleName(status);
             String accessUrl = definition == null ? ""
                     : MockNetworkAddressResolver.accessUrl(definition, definition.getPort());
             addressLabel.setText(accessUrl);
-            setToolTipText(definition == null ? null : definition.getName() + " — " + accessUrl);
+            setToolTipText(definition == null ? null : definition.getName() + " — " + status + " — " + accessUrl);
 
             setBackground(isSelected ? list.getSelectionBackground() : list.getBackground());
             titleLabel.setForeground(isSelected ? list.getSelectionForeground() : ModernColors.getTextPrimary());
             addressLabel.setForeground(isSelected ? list.getSelectionForeground() : ModernColors.getTextSecondary());
-            stateLabel.setForeground(isSelected
-                    ? list.getSelectionForeground()
-                    : running ? ModernColors.getSuccess() : ModernColors.getTextSecondary());
+            return this;
+        }
+    }
+
+    private final class RouteMethodRenderer extends DefaultTableCellRenderer {
+        private final Icon conflictIcon = semanticIcon("icons/warning.svg", ModernColors::getWarning);
+
+        @Override
+        public Component getTableCellRendererComponent(JTable table, Object value, boolean selected,
+                                                       boolean focus, int row, int column) {
+            super.getTableCellRendererComponent(table, value, selected, focus, row, column);
+            boolean conflicting = routeTableModel.isConflict(table.convertRowIndexToModel(row));
+            setIcon(conflicting ? conflictIcon : null);
+            setIconTextGap(4);
+            setToolTipText(conflicting
+                    ? I18nUtil.getMessage(MessageKeys.MOCK_SERVER_ROUTE_CONFLICTS_HINT)
+                    : null);
+            return this;
+        }
+    }
+
+    private final class RouteResponseRenderer extends DefaultTableCellRenderer {
+        private final Icon configuredIcon = semanticIcon("icons/check.svg", ModernColors::getSuccess);
+        private final Icon missingIcon = semanticIcon("icons/warning.svg", ModernColors::getWarning);
+
+        @Override
+        public Component getTableCellRendererComponent(JTable table, Object value, boolean selected,
+                                                       boolean focus, int row, int column) {
+            super.getTableCellRendererComponent(table, value, selected, focus, row, column);
+            MockRouteEntry entry = routeTableModel.row(table.convertRowIndexToModel(row));
+            boolean configured = entry != null && entry.configured();
+            setIcon(configured ? configuredIcon : missingIcon);
+            setText(configured ? String.valueOf(value) : "");
+            setIconTextGap(5);
+            String description = configured ? String.valueOf(value)
+                    : I18nUtil.getMessage(MessageKeys.MOCK_SERVER_ROUTE_UNCONFIGURED_HINT);
+            setToolTipText(description);
+            getAccessibleContext().setAccessibleName(description);
+            return this;
+        }
+    }
+
+    private final class RouteModeRenderer extends DefaultTableCellRenderer {
+        private final Icon codeIcon = IconUtil.createThemed("icons/code.svg", 16, 16);
+        private final Icon staticIcon = IconUtil.createThemed("icons/file.svg", 16, 16);
+
+        @Override
+        public Component getTableCellRendererComponent(JTable table, Object value, boolean selected,
+                                                       boolean focus, int row, int column) {
+            super.getTableCellRendererComponent(table, value, selected, focus, row, column);
+            MockRouteEntry entry = routeTableModel.row(table.convertRowIndexToModel(row));
+            setIcon(entry == null || !entry.configured() ? null : entry.codeMock() ? codeIcon : staticIcon);
+            setText("");
+            setHorizontalAlignment(SwingConstants.CENTER);
+            String description = entry == null || !entry.configured()
+                    ? I18nUtil.getMessage(MessageKeys.MOCK_SERVER_ROUTE_UNCONFIGURED)
+                    : String.valueOf(value);
+            setToolTipText(description);
+            getAccessibleContext().setAccessibleName(description);
+            return this;
+        }
+    }
+
+    private static final class RouteStatusRenderer extends DefaultTableCellRenderer {
+        @Override
+        public Component getTableCellRendererComponent(JTable table, Object value, boolean selected,
+                                                       boolean focus, int row, int column) {
+            super.getTableCellRendererComponent(table, value, selected, focus, row, column);
+            setHorizontalAlignment(SwingConstants.CENTER);
+            if (!selected && value instanceof Integer status) {
+                setForeground(status >= 500 ? ModernColors.getError()
+                        : status >= 400 ? ModernColors.getWarning()
+                        : status >= 200 && status < 400 ? ModernColors.getSuccess()
+                        : ModernColors.getTextPrimary());
+            }
             return this;
         }
     }
 
     private static final class RouteTableModel extends AbstractTableModel {
         private List<MockRouteEntry> rows = List.of();
+        private Set<Integer> conflictRows = Set.of();
         private final String[] columns = {
                 I18nUtil.getMessage(MessageKeys.MOCK_SERVER_ROUTE_METHOD),
                 I18nUtil.getMessage(MessageKeys.MOCK_SERVER_ROUTE_PATH),
@@ -973,12 +1202,14 @@ public class MockServerPanel extends UiSingletonPanel {
                 I18nUtil.getMessage(MessageKeys.MOCK_SERVER_ROUTE_MODE)
         };
 
-        void setRows(List<MockRouteEntry> rows) {
+        void setRows(List<MockRouteEntry> rows, Set<Integer> conflictRows) {
             this.rows = rows == null ? List.of() : List.copyOf(rows);
+            this.conflictRows = conflictRows == null ? Set.of() : Set.copyOf(conflictRows);
             fireTableDataChanged();
         }
 
         MockRouteEntry row(int index) { return index < 0 || index >= rows.size() ? null : rows.get(index); }
+        boolean isConflict(int index) { return conflictRows.contains(index); }
 
         @Override public int getRowCount() { return rows.size(); }
         @Override public int getColumnCount() { return columns.length; }
@@ -995,12 +1226,12 @@ public class MockServerPanel extends UiSingletonPanel {
                 case 4 -> row.configured()
                         ? row.exampleName()
                         : I18nUtil.getMessage(MessageKeys.MOCK_SERVER_ROUTE_UNCONFIGURED);
-                case 5 -> row.configured() ? row.statusCode() : "—";
+                case 5 -> row.configured() ? row.statusCode() : "";
                 case 6 -> row.configured()
                         ? I18nUtil.getMessage(row.codeMock()
                                 ? MessageKeys.MOCK_SERVER_ROUTE_MODE_CODE
                                 : MessageKeys.MOCK_SERVER_ROUTE_MODE_STATIC)
-                        : "—";
+                        : "";
                 default -> "";
             };
         }
@@ -1055,11 +1286,14 @@ public class MockServerPanel extends UiSingletonPanel {
         };
 
         void setRows(Map<String, Map<String, Object>> sessions) {
-            rows.clear();
+            List<StateRow> nextRows = new ArrayList<>();
             if (sessions != null) {
                 sessions.forEach((session, values) -> values.forEach(
-                        (key, value) -> rows.add(new StateRow(session, key, String.valueOf(value)))));
+                        (key, value) -> nextRows.add(new StateRow(session, key, String.valueOf(value)))));
             }
+            if (rows.equals(nextRows)) return;
+            rows.clear();
+            rows.addAll(nextRows);
             fireTableDataChanged();
         }
 

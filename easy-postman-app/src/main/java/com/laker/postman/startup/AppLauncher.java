@@ -31,6 +31,7 @@ public class AppLauncher {
     }
 
     public int launch(String[] args) {
+        long launchStartedAt = System.nanoTime();
         configureBaseRuntimeEnvironment();
         registerShutdownHook();
         OptionalInt commandExitCode = new AppCommandRouter().route(args, System.out, System.err);
@@ -49,9 +50,13 @@ public class AppLauncher {
         if (singleInstanceExitCode.isPresent()) {
             return singleInstanceExitCode.getAsInt();
         }
-        // 先完成 Swing 平台配置，再把组件初始化切到 EDT，避免 UI 线程外创建组件。
+        // 先完成平台和主题配置，再把组件创建切到 EDT。
         configurePlatformWindowDecorations();
-        SwingUtilities.invokeLater(AppLauncher::startSwingApplication);
+        StartupCoordinator startupCoordinator = new StartupCoordinator(launchStartedAt);
+        startupCoordinator.startHostIocInitialization();
+        initializeLookAndFeel();
+        markStartupCheckpoint("look and feel initialized");
+        SwingUtilities.invokeLater(() -> startSwingApplication(startupCoordinator));
         return GUI_STARTED;
     }
 
@@ -102,13 +107,10 @@ public class AppLauncher {
         JDialog.setDefaultLookAndFeelDecorated(true);
     }
 
-    private void startSwingApplication() {
+    private void startSwingApplication(StartupCoordinator startupCoordinator) {
         markStartupCheckpoint("Swing EDT initialization started");
         log.info("Starting Swing application initialization on EDT");
-        // Swing 组件创建前先确定主题；主题初始化会同步恢复用户字体 defaults。
-        initializeLookAndFeel();
-        markStartupCheckpoint("look and feel initialized");
-        startMainFrame();
+        startMainFrame(startupCoordinator);
     }
 
     /**
@@ -120,8 +122,7 @@ public class AppLauncher {
         log.info("Application look and feel initialized");
     }
 
-    private void startMainFrame() {
-        StartupCoordinator startupCoordinator = new StartupCoordinator();
+    private void startMainFrame(StartupCoordinator startupCoordinator) {
         boolean splashEnabled = SettingManager.isStartupSplashEnabled();
         log.info("Starting main frame initialization: splashEnabled={}", splashEnabled);
         if (splashEnabled) {
@@ -129,7 +130,7 @@ public class AppLauncher {
             startWithSplash(startupCoordinator);
             return;
         }
-        // 无 Splash 模式仍使用后台线程准备主窗口，避免阻塞 EDT。
+        // IOC 与主题并行初始化；插件就绪后再创建并显示主窗口。
         new NoSplashStartupWorker(startupCoordinator).execute();
     }
 

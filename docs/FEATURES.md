@@ -77,7 +77,7 @@
 - ✅ `pm.*` completion, enabled state, API quick reference, and 8 curated built-in examples with preview and insert/replace actions
 - ✅ CORS, server/route delay, per-call `x-mock-response-delay`, bounded/optional call logs, and `x-mock-session-id` state isolation
 - ✅ Zero-dependency JDK `HttpServer` runtime with CPU-scaled workers and method-indexed routes for concurrent development and lightweight load tests
-- ✅ Listen on all network interfaces by default and display a shareable LAN URL, with an optional shared `x-api-key`
+- ✅ Listen on all network interfaces by default and display the local `127.0.0.1` URL; LAN clients can use a reachable host IP and the same port, with an optional shared `x-api-key`
 - ✅ Store `mock_servers.json` beside `collections.json` in the current workspace so Git workspaces version them together
 - ✅ Run headlessly with `mock run` after copying the workspace to a server or CI runner
 - ✅ Copy the workspace-specific self-host command directly from the management page

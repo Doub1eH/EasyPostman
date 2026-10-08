@@ -3039,7 +3039,6 @@ public final class MessageKeys {
     public static final String MOCK_SERVER_MATCH_BODY = "mock.server.match_body";
     public static final String MOCK_SERVER_MATCH_HEADERS = "mock.server.match_headers";
     public static final String MOCK_SERVER_MATCH_HEADERS_HINT = "mock.server.match_headers_hint";
-    public static final String MOCK_SERVER_AUTO_START = "mock.server.auto_start";
     public static final String MOCK_SERVER_LOCAL_HINT = "mock.server.local_hint";
     public static final String MOCK_SERVER_ROUTES = "mock.server.routes";
     public static final String MOCK_SERVER_LOGS = "mock.server.logs";
@@ -3101,6 +3100,7 @@ public final class MessageKeys {
     public static final String MOCK_SERVER_ROUTE_MODE_CODE = "mock.server.route.mode.code";
     public static final String MOCK_SERVER_ROUTE_MODE_STATIC = "mock.server.route.mode.static";
     public static final String MOCK_SERVER_ROUTE_UNCONFIGURED = "mock.server.route.unconfigured";
+    public static final String MOCK_SERVER_ROUTE_UNCONFIGURED_HINT = "mock.server.route.unconfigured_hint";
     public static final String MOCK_SERVER_COLLECTION_SUMMARY = "mock.server.collection_summary";
     public static final String MOCK_SERVER_ADVANCED = "mock.server.advanced";
     public static final String MOCK_SERVER_ROUTE_DEFAULT_NAME = "mock.server.route.default_name";
@@ -3122,6 +3122,7 @@ public final class MessageKeys {
     public static final String MOCK_SERVER_DEFAULT_NAME = "mock.server.default_name";
     public static final String MOCK_SERVER_ROUTE_CONFLICTS = "mock.server.route_conflicts";
     public static final String MOCK_SERVER_ROUTE_CONFLICTS_HINT = "mock.server.route_conflicts_hint";
+    public static final String MOCK_SERVER_ROUTE_CONFLICTS_ACTION_HINT = "mock.server.route_conflicts_action_hint";
     public static final String MOCK_SERVER_ROUTE_EDIT_STANDALONE = "mock.server.route.edit_standalone";
     public static final String MOCK_SERVER_ROUTE_DELETE_STANDALONE = "mock.server.route.delete_standalone";
 
