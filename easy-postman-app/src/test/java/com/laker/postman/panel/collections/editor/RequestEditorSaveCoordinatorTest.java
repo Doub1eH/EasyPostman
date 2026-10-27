@@ -64,7 +64,7 @@ public class RequestEditorSaveCoordinatorTest {
     }
 
     @Test
-    public void shouldUpdateExistingRequestAndReportFailure() {
+    public void shouldReturnFalseWhenExistingRequestUpdateFails() {
         RequestEditorSaveCoordinator coordinator = new RequestEditorSaveCoordinator();
         FakeSaveContext context = new FakeSaveContext();
         context.currentRequest.setId("request-1");
@@ -73,16 +73,31 @@ public class RequestEditorSaveCoordinatorTest {
 
         boolean saved = coordinator.saveCurrentRequest(context);
 
-        assertTrue(saved);
+        assertFalse(saved);
         assertTrue(context.existingRequestUpdated);
         assertSame(context.updatedExistingRequest, context.currentRequest);
         assertSame(context.updateFailureRequest, context.currentRequest);
+    }
+
+    @Test
+    public void shouldReturnTrueWhenExistingRequestUpdateSucceeds() {
+        RequestEditorSaveCoordinator coordinator = new RequestEditorSaveCoordinator();
+        FakeSaveContext context = new FakeSaveContext();
+        context.currentRequest.setId("request-1");
+        context.currentRequest.setName("Persisted");
+
+        boolean saved = coordinator.saveCurrentRequest(context);
+
+        assertTrue(saved);
+        assertTrue(context.existingRequestUpdated);
+        assertSame(context.updatedExistingRequest, context.currentRequest);
     }
 
     private static final class FakeSaveContext implements RequestEditorSaveCoordinator.SaveContext {
         private final HttpRequestItem currentRequest = new HttpRequestItem();
         private final TreeModel groupTreeModel = new DefaultTreeModel(null);
         private boolean savedResponseTab;
+        private boolean savedResponseRequestSaved;
         private boolean pinnedTransientTab;
         private String validationError;
         private String settingsValidationErrorShown;
@@ -104,7 +119,8 @@ public class RequestEditorSaveCoordinatorTest {
         }
 
         @Override
-        public void showSavedResponseReadonly() {
+        public boolean saveSavedResponseRequest() {
+            return savedResponseRequestSaved;
         }
 
         @Override

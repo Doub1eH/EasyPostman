@@ -1,5 +1,8 @@
 package com.laker.postman.http.runtime.okhttp;
 
+import com.laker.postman.http.runtime.config.HttpRequestRuntimeSettingsResolver;
+import com.laker.postman.http.runtime.config.HttpRuntimeSettings;
+import com.laker.postman.http.runtime.config.HttpRuntimeSettingsProvider;
 import com.laker.postman.http.runtime.model.HttpCapturePolicy;
 import com.laker.postman.http.runtime.model.HttpCaptureProfiles;
 import com.laker.postman.http.runtime.model.HttpExchangeKind;
@@ -8,6 +11,7 @@ import com.laker.postman.http.runtime.model.HttpRouteAttempt;
 import com.laker.postman.http.runtime.model.PreparedRequest;
 import com.laker.postman.http.runtime.observation.NetworkLogEventStage;
 import com.laker.postman.http.runtime.observation.NetworkLogSupport;
+import com.laker.postman.http.runtime.observation.SafeSocketAddressFormatter;
 import com.laker.postman.http.runtime.error.NetworkErrorMessageResolver;
 import com.laker.postman.http.runtime.ssl.CertificateCapturingSSLSocketFactory;
 import com.laker.postman.http.runtime.ssl.SSLCertificateValidator;
@@ -15,6 +19,7 @@ import com.laker.postman.http.runtime.ssl.SSLConfigurationUtil;
 import com.laker.postman.http.runtime.ssl.SSLValidationResult;
 import com.laker.postman.http.runtime.transport.HttpExchangeTraceSupport;
 import com.laker.postman.request.model.HttpHeader;
+import com.laker.postman.request.model.HttpRequestProxyPolicy;
 import lombok.extern.slf4j.Slf4j;
 import okhttp3.*;
 
@@ -27,17 +32,29 @@ import java.net.Socket;
 import java.nio.charset.StandardCharsets;
 import java.security.cert.Certificate;
 import java.security.cert.X509Certificate;
+import java.time.format.DateTimeFormatter;
 import java.util.ArrayList;
 import java.util.Collection;
+import java.util.Collections;
 import java.util.List;
+import java.util.Locale;
+import java.util.Map;
+import java.util.Set;
+import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.TimeUnit;
+import java.util.concurrent.atomic.AtomicBoolean;
 
 /**
  * 事件监听器，既记录详细连接事件和耗时，也统计连接信息
  */
 @Slf4j
 public class OkHttpExchangeEventListener extends EventListener {
-    private final long callStartNanos;
+    // Match OkHttp's HTTP/2 codec filtering; this is a logical view, not captured wire bytes.
+    private static final Set<String> HTTP2_OMITTED_HEADERS = Set.of(
+            "connection", "keep-alive", "proxy-connection", "transfer-encoding", "encoding", "upgrade",
+            ":method", ":path", ":scheme", ":authority");
+    private long callStartNanos;
+    private Long lastRequestSendOffset;
     private final HttpEventInfo info;
     private final PreparedRequest preparedRequest;
     private final HttpExchangeKind exchangeKind;
@@ -47,7 +64,10 @@ public class OkHttpExchangeEventListener extends EventListener {
     private final boolean collectEventInfo; // 是否收集完整事件信息（DNS、连接等）
     private final boolean enableNetworkLog; // 是否启用网络日志面板输出
     private final Object routeAttemptLock = new Object();
+    private final AtomicBoolean socksProtocolMismatchLogged = new AtomicBoolean();
+    private final Set<String> hiddenDiagnosticHosts;
     private final List<PendingRouteAttempt> pendingRouteAttempts = new ArrayList<>();
+    private final Map<NetworkLogEventStage, Long> phaseStartOffsets;
     private boolean successfulRouteConnected;
 
     public OkHttpExchangeEventListener(PreparedRequest preparedRequest) {
@@ -64,6 +84,9 @@ public class OkHttpExchangeEventListener extends EventListener {
         this.collectMetricsInfo = capturePolicy.collectMetrics();
         this.collectEventInfo = capturePolicy.collectEventDetails();
         this.enableNetworkLog = capturePolicy.emitNetworkLog();
+        this.phaseStartOffsets = enableNetworkLog ? new ConcurrentHashMap<>() : Collections.emptyMap();
+        this.hiddenDiagnosticHosts = collectEventInfo
+                ? ConcurrentHashMap.newKeySet() : Collections.emptySet();
     }
 
     /**
@@ -75,19 +98,88 @@ public class OkHttpExchangeEventListener extends EventListener {
 
     private void log(NetworkLogEventStage stage, String msg, Long durationMs) {
         // 只有启用了网络日志才向外发布事件，具体展示由调用方注入的 sink 负责。
-        if (!enableNetworkLog || shouldDelegateRealtimeStage(stage)) {
+        if (!enableNetworkLog) {
             return;
         }
 
         long now = System.nanoTime();
         long elapsedMs = (now - callStartNanos) / 1_000_000;
-        NetworkLogSupport.append(preparedRequest, stage, msg, elapsedMs, durationMs);
+        NetworkLogEventStage startStage = phaseStartStage(stage);
+        if (startStage == stage) {
+            phaseStartOffsets.put(stage, elapsedMs);
+        } else if (startStage != null) {
+            Long startOffset = phaseStartOffsets.remove(startStage);
+            if (startOffset != null) {
+                // Use the same monotonic clock and rounding as the displayed +Nms offsets.
+                durationMs = Math.max(0L, elapsedMs - startOffset);
+            }
+        }
+        if (stage == NetworkLogEventStage.REQUEST_HEADERS_END || stage == NetworkLogEventStage.REQUEST_BODY_END) {
+            lastRequestSendOffset = elapsedMs;
+        } else if (stage == NetworkLogEventStage.RESPONSE_HEADERS_END
+                || stage == NetworkLogEventStage.RESPONSE_HEADERS_END_REDIRECT) {
+            if (lastRequestSendOffset != null) {
+                int statusEnd = msg.indexOf('\n', msg.startsWith("\n") ? 1 : 0);
+                if (statusEnd >= 0) {
+                    msg = msg.substring(0, statusEnd + 1)
+                            + "Wait: " + Math.max(0L, elapsedMs - lastRequestSendOffset) + "ms\n"
+                            + msg.substring(statusEnd + 1);
+                }
+            }
+            // Header parsing time is less useful here than the wait after the request was sent.
+            durationMs = null;
+        }
+        if (shouldDelegateRealtimeStage(stage) || isRedundantHttpStage(stage)) {
+            return;
+        }
+        NetworkLogSupport.append(preparedRequest, stage,
+                containsEndpointDiagnostics(stage) ? safeDiagnosticText(msg) : msg,
+                elapsedMs, durationMs);
+    }
+
+    private boolean isRedundantHttpStage(NetworkLogEventStage stage) {
+        return exchangeKind == HttpExchangeKind.HTTP && (stage == NetworkLogEventStage.REQUEST_HEADERS_START
+                || stage == NetworkLogEventStage.RESPONSE_HEADERS_START
+                || stage == NetworkLogEventStage.RESPONSE_BODY_START
+                || stage == NetworkLogEventStage.PROXY_SELECT_START
+                || stage == NetworkLogEventStage.CONNECT_END
+                || stage == NetworkLogEventStage.CONNECTION_RELEASED);
+    }
+
+    private static NetworkLogEventStage phaseStartStage(NetworkLogEventStage stage) {
+        return switch (stage) {
+            case DISPATCHER_QUEUE_START, PROXY_SELECT_START, DNS_START, SECURE_CONNECT_START,
+                    REQUEST_HEADERS_START, REQUEST_BODY_START, RESPONSE_HEADERS_START, RESPONSE_BODY_START -> stage;
+            case DISPATCHER_QUEUE_END -> NetworkLogEventStage.DISPATCHER_QUEUE_START;
+            case PROXY_SELECT_END -> NetworkLogEventStage.PROXY_SELECT_START;
+            case DNS_END -> NetworkLogEventStage.DNS_START;
+            case SECURE_CONNECT_END -> NetworkLogEventStage.SECURE_CONNECT_START;
+            case REQUEST_HEADERS_END -> NetworkLogEventStage.REQUEST_HEADERS_START;
+            case REQUEST_BODY_END -> NetworkLogEventStage.REQUEST_BODY_START;
+            case RESPONSE_HEADERS_END, RESPONSE_HEADERS_END_REDIRECT -> NetworkLogEventStage.RESPONSE_HEADERS_START;
+            case RESPONSE_BODY_END -> NetworkLogEventStage.RESPONSE_BODY_START;
+            default -> null;
+        };
+    }
+
+    private static boolean containsEndpointDiagnostics(NetworkLogEventStage stage) {
+        return switch (stage) {
+            case PROXY_SELECT_END, DNS_START, DNS_END, CONNECT_START, CONNECT_END, CONNECT_FAILED,
+                    CONNECTION_ACQUIRED, CONNECTION_RELEASED, RETRY_DECISION,
+                    REQUEST_FAILED, RESPONSE_FAILED, CALL_FAILED -> true;
+            default -> false;
+        };
     }
 
     @Override
     public void callStart(Call call) {
         if (!collectMetricsInfo) {
             return;
+        }
+        callStartNanos = System.nanoTime();
+        lastRequestSendOffset = null;
+        if (enableNetworkLog) {
+            phaseStartOffsets.clear();
         }
         if (collectEventInfo) {
             SSLConfigurationUtil.clearValidationResult();
@@ -168,13 +260,17 @@ public class OkHttpExchangeEventListener extends EventListener {
             return;
         }
         info.setProxySelectEnd(System.currentTimeMillis());
+        if (exchangeKind == HttpExchangeKind.HTTP && proxies.stream().allMatch(proxy -> proxy.type() == Proxy.Type.DIRECT)) {
+            return;
+        }
         StringBuilder sb = new StringBuilder();
         sb.append("Proxies: ");
         for (Proxy proxy : proxies) {
             sb.append(proxy.type()).append(" ");
             if (proxy.address() instanceof InetSocketAddress address) {
                 // getHostName() may trigger an unrelated reverse-DNS lookup while tracing.
-                sb.append(address.getHostString()).append(":").append(address.getPort()).append(" ");
+                safeDiagnosticHost(address.getHostString());
+                sb.append(SafeSocketAddressFormatter.hostPort(address)).append(" ");
             }
         }
         log(NetworkLogEventStage.PROXY_SELECT_END, sb.toString(),
@@ -187,10 +283,10 @@ public class OkHttpExchangeEventListener extends EventListener {
             return;
         }
         info.setDnsStart(System.currentTimeMillis());
-        info.setDnsHost(domainName);
+        info.setDnsHost(safeDiagnosticHost(domainName));
         info.setDnsError(null);
         info.replaceDnsAddresses(List.of());
-        log(NetworkLogEventStage.DNS_START, domainName);
+        log(NetworkLogEventStage.DNS_START, info.getDnsHost());
     }
 
     @Override
@@ -199,10 +295,12 @@ public class OkHttpExchangeEventListener extends EventListener {
             return;
         }
         info.setDnsEnd(System.currentTimeMillis());
-        info.replaceDnsAddresses(inetAddressList.stream()
+        String displayedHost = safeDiagnosticHost(domainName);
+        List<String> addresses = inetAddressList.stream()
                 .map(OkHttpExchangeEventListener::concreteAddress)
-                .toList());
-        log(NetworkLogEventStage.DNS_END, domainName + " -> " + inetAddressList,
+                .toList();
+        info.replaceDnsAddresses(addresses);
+        log(NetworkLogEventStage.DNS_END, displayedHost + " -> " + addresses,
                 duration(info.getDnsStart(), info.getDnsEnd()));
     }
 
@@ -212,15 +310,18 @@ public class OkHttpExchangeEventListener extends EventListener {
             return;
         }
         long startTime = System.currentTimeMillis();
+        safeDiagnosticHost(inetSocketAddress.getHostString());
         synchronized (routeAttemptLock) {
             pendingRouteAttempts.add(new PendingRouteAttempt(
+                    inetSocketAddress,
                     routeAddress(inetSocketAddress),
                     addressFamily(inetSocketAddress),
                     startTime,
                     System.nanoTime()
             ));
         }
-        log(NetworkLogEventStage.CONNECT_START, inetSocketAddress + " via " + proxy.type());
+        log(NetworkLogEventStage.CONNECT_START,
+                SafeSocketAddressFormatter.socketAddress(inetSocketAddress) + " via " + proxy.type());
     }
 
     @Override
@@ -229,12 +330,14 @@ public class OkHttpExchangeEventListener extends EventListener {
             return;
         }
         info.setSecureConnectStart(System.currentTimeMillis());
-        log(NetworkLogEventStage.SECURE_CONNECT_START, "TLS handshake start");
+        log(NetworkLogEventStage.SECURE_CONNECT_START, "");
     }
 
     @Override
     public void secureConnectEnd(Call call, Handshake handshake) {
         if (!collectEventInfo) {
+            CertificateCapturingSSLSocketFactory.clearLastCapturedCertificates();
+            SSLConfigurationUtil.clearValidationResult();
             return;
         }
         info.setSecureConnectEnd(System.currentTimeMillis());
@@ -312,8 +415,6 @@ public class OkHttpExchangeEventListener extends EventListener {
                         info.setSslCertWarning(allWarnings.toString());
                     }
 
-                    // 清除线程本地存储的SSL错误
-                    SSLConfigurationUtil.clearValidationResult();
                 } catch (Exception e) {
                     log.debug("Error validating certificate: {}", e.getMessage());
                 }
@@ -321,19 +422,27 @@ public class OkHttpExchangeEventListener extends EventListener {
             // 记录handshake信息
             if (handshake != null) {
                 StringBuilder handshakeInfo = new StringBuilder();
-                handshakeInfo.append("SSL connection using ")
-                        .append(handshake.tlsVersion())
+                handshakeInfo.append("TLS connection: ")
+                        .append(handshake.tlsVersion().javaName())
                         .append(" / ")
                         .append(handshake.cipherSuite())
                         .append("\n");
+                boolean verificationEnabled = preparedRequest != null && preparedRequest.sslVerificationEnabled
+                        && !HttpRequestRuntimeSettingsResolver.isProxySslVerificationForcedDisabled(
+                                preparedRequest.url, preparedRequest.proxyPolicy);
+                handshakeInfo.append("Verification: ").append(verificationEnabled ? "enabled" : "disabled").append("\n");
+                boolean hasWarning = info.getSslCertWarning() != null && !info.getSslCertWarning().isBlank();
                 List<Certificate> peerCertificates = info.getPeerCertificates();
-                if (peerCertificates != null && !peerCertificates.isEmpty()) {
+                // Certificate metadata remains available in the trace; expand it in the log only for a warning.
+                if (hasWarning && peerCertificates != null && !peerCertificates.isEmpty()) {
                     Certificate cert = peerCertificates.get(0);
                     if (cert instanceof X509Certificate x509) {
                         handshakeInfo.append("Server certificate:\n");
-                        handshakeInfo.append(" subject: ").append(x509.getSubjectDN()).append("\n");
-                        handshakeInfo.append(" start date: ").append(x509.getNotBefore()).append(" GMT\n");
-                        handshakeInfo.append(" expire date: ").append(x509.getNotAfter()).append(" GMT\n");
+                        handshakeInfo.append(" subject: ").append(x509.getSubjectX500Principal()).append("\n");
+                        handshakeInfo.append(" start date: ")
+                                .append(DateTimeFormatter.ISO_INSTANT.format(x509.getNotBefore().toInstant())).append("\n");
+                        handshakeInfo.append(" expire date: ")
+                                .append(DateTimeFormatter.ISO_INSTANT.format(x509.getNotAfter().toInstant())).append("\n");
                         Collection<List<?>> altNames = null;
                         try {
                             altNames = x509.getSubjectAlternativeNames();
@@ -351,15 +460,13 @@ public class OkHttpExchangeEventListener extends EventListener {
                             }
                             handshakeInfo.append("\n");
                         }
-                        handshakeInfo.append(" issuer: ").append(x509.getIssuerDN()).append("\n");
+                        handshakeInfo.append(" issuer: ").append(x509.getIssuerX500Principal()).append("\n");
                     }
                 }
 
                 // 如果有证书警告，添加到日志中
-                if (info.getSslCertWarning() != null && !info.getSslCertWarning().isEmpty()) {
+                if (hasWarning) {
                     handshakeInfo.append("⚠️  Certificate Warning: ").append(info.getSslCertWarning()).append("\n");
-                } else {
-                    handshakeInfo.append("SSL certificate verify ok.\n");
                 }
 
                 log(NetworkLogEventStage.SECURE_CONNECT_END, handshakeInfo.toString(),
@@ -370,6 +477,7 @@ public class OkHttpExchangeEventListener extends EventListener {
             }
         } finally {
             CertificateCapturingSSLSocketFactory.clearLastCapturedCertificates();
+            SSLConfigurationUtil.clearValidationResult();
         }
     }
 
@@ -395,15 +503,19 @@ public class OkHttpExchangeEventListener extends EventListener {
             info.setConnectStart(attempt.startTime());
             info.setConnectEnd(attempt.endTime());
         }
-        log(NetworkLogEventStage.CONNECT_END, inetSocketAddress + " via " + proxy.type() + ", protocol=" + protocol,
+        log(NetworkLogEventStage.CONNECT_END,
+                SafeSocketAddressFormatter.socketAddress(inetSocketAddress)
+                        + " via " + proxy.type() + ", protocol=" + protocol,
                 attempt == null ? null : attempt.durationMs());
     }
 
     @Override
     public void connectFailed(Call call, InetSocketAddress inetSocketAddress, Proxy proxy, Protocol protocol, IOException ioe) {
+        logSocksProtocolMismatch(proxy, ioe);
         if (!collectEventInfo) {
             return;
         }
+        safeDiagnosticHost(inetSocketAddress.getHostString());
         HttpRouteAttempt attempt;
         synchronized (routeAttemptLock) {
             boolean canceled = (call != null && call.isCanceled())
@@ -417,8 +529,42 @@ public class OkHttpExchangeEventListener extends EventListener {
                     exceptionMessage(ioe)
             );
         }
-        log(NetworkLogEventStage.CONNECT_FAILED, inetSocketAddress + " via " + proxy.type() + ", protocol=" + protocol + ", error: " + exceptionMessage(ioe),
+        log(NetworkLogEventStage.CONNECT_FAILED,
+                SafeSocketAddressFormatter.socketAddress(inetSocketAddress)
+                        + " via " + proxy.type() + ", protocol=" + protocol + ", error: " + exceptionMessage(ioe),
                 attempt == null ? null : attempt.durationMs());
+    }
+
+    private void logSocksProtocolMismatch(Proxy proxy, IOException exception) {
+        if (!enableNetworkLog || !NetworkErrorMessageResolver.isSocksProtocolMismatch(exception.getMessage())) {
+            return;
+        }
+        if (!socksProtocolMismatchLogged.compareAndSet(false, true)) {
+            return;
+        }
+        String routeProxy = proxy == null ? "UNKNOWN" : proxy.type().name();
+        HttpRequestProxyPolicy requestPolicy = HttpRequestProxyPolicy.normalize(
+                preparedRequest == null ? null : preparedRequest.proxyPolicy);
+        try {
+            HttpRuntimeSettings settings = HttpRuntimeSettingsProvider.get();
+            boolean appProxyEnabled = settings.isProxyEnabled();
+            boolean systemProxyMode = settings.isSystemProxyMode();
+            boolean manualProxyRequested = requestPolicy != HttpRequestProxyPolicy.NO_PROXY
+                    && !systemProxyMode
+                    && (requestPolicy == HttpRequestProxyPolicy.USE_PROXY || appProxyEnabled);
+            String manualProxyType = "NOT_USED";
+            if (manualProxyRequested) {
+                manualProxyType = HttpRuntimeSettings.PROXY_TYPE_SOCKS.equalsIgnoreCase(settings.getProxyType())
+                        ? "SOCKS" : "HTTP";
+            }
+            log.warn("SOCKS_PROTOCOL_MISMATCH requestPolicy={} appProxyEnabled={} appProxyMode={} "
+                            + "manualProxyType={} routeProxy={}",
+                    requestPolicy, appProxyEnabled, systemProxyMode ? "SYSTEM" : "MANUAL",
+                    manualProxyType, routeProxy);
+        } catch (RuntimeException ignored) {
+            log.warn("SOCKS_PROTOCOL_MISMATCH requestPolicy={} routeProxy={} proxySettings=unavailable",
+                    requestPolicy, routeProxy);
+        }
     }
 
     private HttpRouteAttempt completeRouteAttemptLocked(InetSocketAddress address,
@@ -427,11 +573,10 @@ public class OkHttpExchangeEventListener extends EventListener {
                                                         boolean canceled,
                                                         String protocol,
                                                         String error) {
-        String routeAddress = routeAddress(address);
         HttpRouteAttempt completedAttempt = null;
         for (int i = pendingRouteAttempts.size() - 1; i >= 0; i--) {
             PendingRouteAttempt pending = pendingRouteAttempts.get(i);
-            if (!pending.address.equals(routeAddress)) {
+            if (!pending.socketAddress.equals(address)) {
                 continue;
             }
             pendingRouteAttempts.remove(i);
@@ -527,7 +672,7 @@ public class OkHttpExchangeEventListener extends EventListener {
     private static String routeAddress(InetSocketAddress address) {
         InetAddress resolvedAddress = address.getAddress();
         if (resolvedAddress == null) {
-            return address.getHostString() + ":" + address.getPort();
+            return SafeSocketAddressFormatter.hostPort(address);
         }
         return socketEndpoint(resolvedAddress, address.getPort());
     }
@@ -560,12 +705,18 @@ public class OkHttpExchangeEventListener extends EventListener {
     }
 
     private static final class PendingRouteAttempt {
+        private final InetSocketAddress socketAddress;
         private final String address;
         private final String addressFamily;
         private final long startTime;
         private final long startNanos;
 
-        private PendingRouteAttempt(String address, String addressFamily, long startTime, long startNanos) {
+        private PendingRouteAttempt(InetSocketAddress socketAddress,
+                                    String address,
+                                    String addressFamily,
+                                    long startTime,
+                                    long startNanos) {
+            this.socketAddress = socketAddress;
             this.address = address;
             this.addressFamily = addressFamily;
             this.startTime = startTime;
@@ -594,7 +745,12 @@ public class OkHttpExchangeEventListener extends EventListener {
         }
         boolean reused = info.getConnectStart() <= 0;
         String label = reused ? "Connection reused" : "Connection acquired";
-        log(NetworkLogEventStage.CONNECTION_ACQUIRED, label + ": " + connection.toString() + ", local=" + info.getLocalAddress() + ", remote=" + info.getRemoteAddress());
+        Long setupDuration = reused ? null : info.getRouteAttempts().stream()
+                .filter(attempt -> attempt.connected() && attempt.startTime() == info.getConnectStart())
+                .map(HttpRouteAttempt::durationMs)
+                .findFirst().orElse(null);
+        log(NetworkLogEventStage.CONNECTION_ACQUIRED, label + ": " + connectionRouteDescription(connection)
+                + ", local=" + info.getLocalAddress() + ", remote=" + info.getRemoteAddress(), setupDuration);
     }
 
     @Override
@@ -603,8 +759,17 @@ public class OkHttpExchangeEventListener extends EventListener {
             return;
         }
         info.setConnectionReleased(System.currentTimeMillis());
-        log(NetworkLogEventStage.CONNECTION_RELEASED, "Connection released: " + connection.toString() + ", local=" + info.getLocalAddress() + ", remote=" + info.getRemoteAddress(),
-                duration(info.getConnectionAcquired(), info.getConnectionReleased()));
+        log(NetworkLogEventStage.CONNECTION_RELEASED, "Connection use released");
+    }
+
+    private static String connectionRouteDescription(Connection connection) {
+        try {
+            Route route = connection.route();
+            return "proxy=" + route.proxy().type()
+                    + ", protocol=" + connection.protocol();
+        } catch (RuntimeException ignored) {
+            return "route unavailable";
+        }
     }
 
     @Override
@@ -637,7 +802,7 @@ public class OkHttpExchangeEventListener extends EventListener {
     public void requestBodyStart(Call call) {
         if (collectMetricsInfo) {
             info.setRequestBodyStart(System.currentTimeMillis());
-            if (enableNetworkLog) {
+            if (enableNetworkLog && !(exchangeKind == HttpExchangeKind.HTTP && isEmptyRequestBody(call))) {
                 log(NetworkLogEventStage.REQUEST_BODY_START, formatSentRequestBody());
             }
         }
@@ -650,8 +815,16 @@ public class OkHttpExchangeEventListener extends EventListener {
         }
         info.setBodyBytesSent(byteCount);
         info.setRequestBodyEnd(System.currentTimeMillis());
-        log(NetworkLogEventStage.REQUEST_BODY_END, "bytes=" + byteCount,
-                duration(info.getRequestBodyStart(), info.getRequestBodyEnd()));
+        if (exchangeKind == HttpExchangeKind.HTTP && byteCount == 0L) {
+            // Still record the send completion for response waiting time and timeline metrics.
+            if (enableNetworkLog) {
+                lastRequestSendOffset = (System.nanoTime() - callStartNanos) / 1_000_000;
+                phaseStartOffsets.remove(NetworkLogEventStage.REQUEST_BODY_START);
+            }
+        } else {
+            log(NetworkLogEventStage.REQUEST_BODY_END, "bytes=" + byteCount,
+                    duration(info.getRequestBodyStart(), info.getRequestBodyEnd()));
+        }
     }
 
     @Override
@@ -659,12 +832,12 @@ public class OkHttpExchangeEventListener extends EventListener {
         if (!collectMetricsInfo) {
             return;
         }
-        info.setErrorMessage(NetworkErrorMessageResolver.toUserFriendlyMessage(ioe));
+        info.setErrorMessage(safeDiagnosticText(NetworkErrorMessageResolver.toUserFriendlyMessage(ioe)));
         info.setError(ioe);
         if (!enableNetworkLog) {
             return;
         }
-        log(NetworkLogEventStage.REQUEST_FAILED, ioe.getMessage() + "\n" + getStackTrace(ioe));
+        log(NetworkLogEventStage.REQUEST_FAILED, exceptionMessage(ioe));
     }
 
     @Override
@@ -688,29 +861,13 @@ public class OkHttpExchangeEventListener extends EventListener {
         }
         StringBuilder sb = new StringBuilder("\n");
         boolean isRedirect = response.isRedirect();
-        sb.append("Redirect: ").append(isRedirect).append("\n");
-        sb.append("Response Code: ").append(response.code()).append(" ").append(response.message()).append("\n");
-        sb.append("Protocol: ").append(response.protocol()).append("\n");
-        sb.append("Content-Type: ").append(response.header("Content-Type", "")).append("\n");
-        sb.append("Content-Length: ").append(response.header("Content-Length", "")).append("\n");
-        if (isRedirect) {
-            sb.append("Location: ").append(response.header("Location", "")).append("\n");
-        }
-        if (response.cacheResponse() != null) {
-            sb.append("Cache: HIT\n");
-        } else {
-            sb.append("Cache: MISS\n");
-        }
-        if (response.networkResponse() != null) { // 如果有 networkResponse，说明是网络请求
-            sb.append("Network: YES\n");
-        } else {
-            sb.append("Network: NO\n");
-        }
-        if (response.priorResponse() != null) { // 如果有 priorResponse，说明是重定向或缓存的响应
-            sb.append("PriorResponse: YES\n");
+        String protocol = response.protocol() == Protocol.HTTP_2 || response.protocol() == Protocol.H2_PRIOR_KNOWLEDGE
+                ? "HTTP/2" : response.protocol().toString().toUpperCase(Locale.ROOT);
+        sb.append(protocol).append(" ").append(response.code());
+        if (!response.message().isBlank()) {
+            sb.append(" ").append(response.message());
         }
         sb.append("\n");
-        sb.append("Headers:\n");
         // 处理响应头
         Headers headers = response.headers();
         for (int i = 0; i < headers.size(); i++) {
@@ -757,13 +914,12 @@ public class OkHttpExchangeEventListener extends EventListener {
         if (!collectMetricsInfo) {
             return;
         }
-        info.setErrorMessage(NetworkErrorMessageResolver.toUserFriendlyMessage(ioe));
+        info.setErrorMessage(safeDiagnosticText(NetworkErrorMessageResolver.toUserFriendlyMessage(ioe)));
         info.setError(ioe);
         if (!enableNetworkLog) {
             return;
         }
-        String errorMsg = ioe.getMessage() != null ? ioe.getMessage() : ioe.getClass().getSimpleName();
-        log(NetworkLogEventStage.RESPONSE_FAILED, errorMsg + "\n" + getStackTrace(ioe));
+        log(NetworkLogEventStage.RESPONSE_FAILED, exceptionMessage(ioe));
     }
 
     @Override
@@ -782,7 +938,7 @@ public class OkHttpExchangeEventListener extends EventListener {
             return;
         }
         info.setCallFailed(System.currentTimeMillis());
-        info.setErrorMessage(NetworkErrorMessageResolver.toUserFriendlyMessage(ioe));
+        info.setErrorMessage(safeDiagnosticText(NetworkErrorMessageResolver.toUserFriendlyMessage(ioe)));
         info.setError(ioe);
         if (info.getDnsStart() > 0 && info.getDnsEnd() <= 0 && info.getRouteAttempts().isEmpty()) {
             info.setDnsError(exceptionMessage(ioe));
@@ -824,7 +980,12 @@ public class OkHttpExchangeEventListener extends EventListener {
         }
         boolean followUp = nextRequest != null;
         info.recordFollowUpDecision(followUp);
-        String next = followUp ? nextRequest.method() + " " + nextRequest.url() : "none";
+        // Application redirects are handled outside this call. A negative internal decision
+        // adds no useful information and would contradict the following REDIRECT event.
+        if (!followUp) {
+            return;
+        }
+        String next = nextRequest.method() + " " + nextRequest.url();
         log(NetworkLogEventStage.FOLLOW_UP_DECISION,
                 "Follow-up: " + followUp + ", response: " + response.code() + ", next: " + next);
     }
@@ -850,10 +1011,7 @@ public class OkHttpExchangeEventListener extends EventListener {
 
     @Override
     public void cacheMiss(Call call) {
-        if (!enableNetworkLog) {
-            return;
-        }
-        log(NetworkLogEventStage.CACHE_MISS, "No cache hit for this call");
+        // An ordinary network response is the default. Cache hit events carry the useful exception.
     }
 
     @Override
@@ -865,37 +1023,61 @@ public class OkHttpExchangeEventListener extends EventListener {
     }
 
 
-    // 辅助方法：获取异常堆栈
-    private String getStackTrace(Throwable t) {
-        StringBuilder sb = new StringBuilder();
-        for (StackTraceElement e : t.getStackTrace()) {
-            sb.append("    at ").append(e.toString()).append("\n");
-        }
-        return sb.toString();
-    }
-
     private String formatSentHeaders() {
         if (preparedRequest.sentHeadersList == null || preparedRequest.sentHeadersList.isEmpty()) {
             return "";
         }
         StringBuilder sb = new StringBuilder("\n");
+        boolean http2 = "h2".equals(info.getProtocol()) || "h2_prior_knowledge".equals(info.getProtocol());
+        sb.append(http2 ? "HTTP/2 header view (regular headers and :authority):" : "Header snapshot:").append("\n");
+        if (http2) {
+            String authority = null;
+            for (HttpHeader header : preparedRequest.sentHeadersList) {
+                if (header != null && "Host".equalsIgnoreCase(header.getKey())) {
+                    authority = header.getValue();
+                }
+            }
+            // Request.header("Host") selects the last value; HTTP/2 writes one :authority.
+            if (authority != null) {
+                sb.append(":authority: ").append(authority).append("\n");
+            }
+        }
         for (HttpHeader header : preparedRequest.sentHeadersList) {
             if (header == null || header.getKey() == null) {
                 continue;
             }
-            sb.append(header.getKey()).append(": ").append(header.getValue()).append("\n");
+            String name = header.getKey();
+            if (http2) {
+                name = name.toLowerCase(Locale.ROOT);
+                if ("host".equals(name) || HTTP2_OMITTED_HEADERS.contains(name)
+                        || ("te".equals(name) && !"trailers".equals(header.getValue()))) {
+                    continue;
+                }
+            }
+            sb.append(name).append(": ").append(header.getValue()).append("\n");
         }
         return sb.toString();
     }
 
     private String formatSentRequestBody() {
         if (preparedRequest.sentRequestBody == null) {
-            return "No request body";
+            return "Request body preview unavailable";
         }
         if (preparedRequest.sentRequestBody.isEmpty()) {
             return "Request body is empty";
         }
         return "\n" + preparedRequest.sentRequestBody;
+    }
+
+    private boolean isEmptyRequestBody(Call call) {
+        if (preparedRequest.sentRequestBody != null && preparedRequest.sentRequestBody.isEmpty()) {
+            return true;
+        }
+        try {
+            return call != null && call.request().body() != null && call.request().body().contentLength() == 0L;
+        } catch (IOException ignored) {
+            return false;
+        }
     }
 
     private Long duration(long startMs, long endMs) {
@@ -905,12 +1087,32 @@ public class OkHttpExchangeEventListener extends EventListener {
         return endMs - startMs;
     }
 
-    private static String exceptionMessage(Throwable throwable) {
+    private String exceptionMessage(Throwable throwable) {
         if (throwable == null) {
             return "Unknown error";
         }
         String message = throwable.getMessage();
-        return message == null || message.isBlank() ? throwable.getClass().getSimpleName() : message;
+        return message == null || message.isBlank() ? throwable.getClass().getSimpleName() : safeDiagnosticText(message);
+    }
+
+    private String safeDiagnosticHost(String rawHost) {
+        String displayed = SafeSocketAddressFormatter.host(rawHost);
+        if (!SafeSocketAddressFormatter.isSafeHost(rawHost)
+                && rawHost != null && rawHost.length() >= 4 && rawHost.indexOf('@') > 0) {
+            hiddenDiagnosticHosts.add(rawHost);
+        }
+        return displayed;
+    }
+
+    private String safeDiagnosticText(String text) {
+        if (text == null || hiddenDiagnosticHosts.isEmpty()) {
+            return text;
+        }
+        String result = text;
+        for (String host : hiddenDiagnosticHosts) {
+            result = result.replace(host, "<invalid-host>");
+        }
+        return result;
     }
 
     private static boolean isRouteCancellationSignal(Throwable throwable) {

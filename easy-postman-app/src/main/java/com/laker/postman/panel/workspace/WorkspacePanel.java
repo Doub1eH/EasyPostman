@@ -9,9 +9,7 @@ import com.laker.postman.common.component.ToolWindowSurfaceStyle;
 import com.laker.postman.common.component.button.PlusButton;
 import com.laker.postman.common.component.dialog.TextInputDialog;
 import com.laker.postman.common.constants.ModernColors;
-import com.laker.postman.model.GitAuthType;
 import com.laker.postman.model.GitOperation;
-import com.laker.postman.model.GitRepoSource;
 import com.laker.postman.model.RemoteStatus;
 import com.laker.postman.model.Workspace;
 import com.laker.postman.model.WorkspaceType;
@@ -434,45 +432,22 @@ public class WorkspacePanel extends UiSingletonPanel {
     }
 
     private void addGitMenuItems(JPopupMenu menu, Workspace workspace) {
-        if (workspace.getType() != WorkspaceType.GIT) {
-            // 所有本地工作区都可以转换为Git工作区（包括默认工作区）
-            // 默认工作区位于 workspaces/default/ 子目录，与其他工作区平级，根目录不参与 git
-            JMenuItem convertToGitItem = new JMenuItem(I18nUtil.getMessage(MessageKeys.WORKSPACE_CONVERT_TO_GIT));
-            convertToGitItem.setIcon(IconUtil.create("icons/git.svg", IconUtil.SIZE_SMALL, IconUtil.SIZE_SMALL));
-            convertToGitItem.addActionListener(e -> convertToGitWorkspace(workspace));
-            menu.add(convertToGitItem);
-            // 只有非默认工作区才添加分隔符（因为后面还有重命名和删除选项）
-            if (!WorkspaceStorageUtil.isDefaultWorkspace(workspace)) {
-                menu.addSeparator();
-            }
+        if (workspace.getType() == WorkspaceType.GIT) {
             return;
         }
 
-        boolean gitItemsAdded = addStandardGitMenuItems(menu, workspace);
-        // 只有非默认工作区才添加分隔符（因为后面还有重命名和删除选项）
-        if (gitItemsAdded && !WorkspaceStorageUtil.isDefaultWorkspace(workspace)) {
+        // 所有本地工作区都可以转换为 Git 工作区（包括默认工作区）。
+        JMenuItem convertToGitItem = new JMenuItem(I18nUtil.getMessage(MessageKeys.WORKSPACE_CONVERT_TO_GIT));
+        convertToGitItem.setIcon(IconUtil.create("icons/git.svg", IconUtil.SIZE_SMALL, IconUtil.SIZE_SMALL));
+        convertToGitItem.addActionListener(e -> convertToGitWorkspace(workspace));
+        menu.add(convertToGitItem);
+        if (!WorkspaceStorageUtil.isDefaultWorkspace(workspace)) {
             menu.addSeparator();
         }
     }
 
-    private boolean addStandardGitMenuItems(JPopupMenu menu, Workspace workspace) {
-        try {
-            RemoteStatus remoteStatus = workspaceService.getRemoteStatus(workspace.getId());
-            if (remoteStatus.hasRemote) {
-                JMenuItem updateAuthItem = new JMenuItem(I18nUtil.getMessage(MessageKeys.WORKSPACE_GIT_AUTH_UPDATE));
-                updateAuthItem.setIcon(IconUtil.createThemed("icons/security.svg", IconUtil.SIZE_SMALL, IconUtil.SIZE_SMALL));
-                updateAuthItem.addActionListener(e -> updateGitAuthentication(workspace));
-                menu.add(updateAuthItem);
-                return true;
-            }
-        } catch (Exception ex) {
-            log.warn("Failed to check remote repository for workspace: {}", workspace.getId(), ex);
-        }
-        return false;
-    }
-
     private void addManagementMenuItems(JPopupMenu menu, Workspace workspace) {
-        // 默认工作区不可重命名和删除
+        // 默认工作区不可重命名和移除
         if (!WorkspaceStorageUtil.isDefaultWorkspace(workspace)) {
             // 重命名
             JMenuItem renameItem = new JMenuItem(I18nUtil.getMessage(MessageKeys.WORKSPACE_RENAME));
@@ -481,12 +456,12 @@ public class WorkspacePanel extends UiSingletonPanel {
             renameItem.addActionListener(e -> renameWorkspace(workspace));
             menu.add(renameItem);
 
-            // 删除
-            JMenuItem deleteItem = new JMenuItem(I18nUtil.getMessage(MessageKeys.WORKSPACE_DELETE));
-            deleteItem.setIcon(IconUtil.createThemed("icons/close.svg", IconUtil.SIZE_SMALL, IconUtil.SIZE_SMALL));
-            deleteItem.setAccelerator(KeyStroke.getKeyStroke(KeyEvent.VK_DELETE, 0));
-            deleteItem.addActionListener(e -> deleteWorkspace(workspace));
-            menu.add(deleteItem);
+            // 移除工作区记录，保留本地文件
+            JMenuItem removeItem = new JMenuItem(I18nUtil.getMessage(MessageKeys.WORKSPACE_REMOVE));
+            removeItem.setIcon(IconUtil.createThemed("icons/close.svg", IconUtil.SIZE_SMALL, IconUtil.SIZE_SMALL));
+            removeItem.setAccelerator(KeyStroke.getKeyStroke(KeyEvent.VK_DELETE, 0));
+            removeItem.addActionListener(e -> removeWorkspace(workspace));
+            menu.add(removeItem);
         }
     }
 
@@ -503,7 +478,7 @@ public class WorkspacePanel extends UiSingletonPanel {
         }
 
         if (e.getKeyCode() == KeyEvent.VK_DELETE || e.getKeyCode() == KeyEvent.VK_BACK_SPACE) {
-            deleteWorkspace(workspace);
+            removeWorkspace(workspace);
             e.consume();
         }
     }
@@ -706,35 +681,45 @@ public class WorkspacePanel extends UiSingletonPanel {
     }
 
     /**
-     * 删除工作区
+     * 移除工作区记录，本地目录及文件始终保留。
      */
-    private void deleteWorkspace(Workspace workspace) {
+    private void removeWorkspace(Workspace workspace) {
         String[] options = {
-                I18nUtil.getMessage(MessageKeys.WORKSPACE_DELETE),
+                I18nUtil.getMessage(MessageKeys.WORKSPACE_REMOVE),
                 I18nUtil.getMessage(MessageKeys.BUTTON_CANCEL)
         };
 
         int choice = JOptionPane.showOptionDialog(
                 this,
-                I18nUtil.getMessage(MessageKeys.WORKSPACE_DELETE_CONFIRM, workspace.getName()),
-                I18nUtil.getMessage(MessageKeys.WORKSPACE_DELETE),
+                I18nUtil.getMessage(MessageKeys.WORKSPACE_REMOVE_CONFIRM,
+                        workspace.getName(), workspace.getPath()),
+                I18nUtil.getMessage(MessageKeys.WORKSPACE_REMOVE),
                 JOptionPane.YES_NO_OPTION,
                 JOptionPane.WARNING_MESSAGE,
                 null,
                 options,
-                options[0] // default option
+                options[1]
         );
 
-        if (choice == 0) { // 删除
+        if (choice == 0) {
+            // 检查是否移除的是当前工作区
+            boolean isRemovingCurrentWorkspace = workspaceService.getCurrentWorkspace() != null &&
+                    workspaceService.getCurrentWorkspace().getId().equals(workspace.getId());
+
             try {
-                // 检查是否删除的是当前工作区
-                boolean isDeletingCurrentWorkspace = workspaceService.getCurrentWorkspace() != null &&
-                        workspaceService.getCurrentWorkspace().getId().equals(workspace.getId());
+                if (isRemovingCurrentWorkspace) {
+                    saveCurrentWorkspaceScopedPanels();
+                }
+                workspaceService.removeWorkspace(workspace.getId());
+            } catch (Exception e) {
+                log.error("Failed to remove workspace", e);
+                showError(I18nUtil.getMessage(MessageKeys.WORKSPACE_REMOVE_FAILED, e.getMessage()));
+                return;
+            }
 
-                workspaceService.deleteWorkspace(workspace.getId());
-
-                // 如果删除的是当前工作区，需要切换到新的当前工作区并刷新相关UI
-                if (isDeletingCurrentWorkspace) {
+            try {
+                // 如果移除的是当前工作区，需要切换到新的当前工作区并刷新相关UI
+                if (isRemovingCurrentWorkspace) {
                     Workspace newCurrentWorkspace = workspaceService.getCurrentWorkspace();
                     if (newCurrentWorkspace != null) {
                         // 切换环境变量文件
@@ -750,7 +735,8 @@ public class WorkspacePanel extends UiSingletonPanel {
                 refreshWorkspaceList();
                 UiSingletonFactory.getInstance(TopMenuBar.class).updateWorkspaceDisplay();
             } catch (Exception e) {
-                log.error("Failed to delete workspace", e);
+                log.error("Workspace was removed, but failed to refresh workspace UI", e);
+                showError(I18nUtil.getMessage(MessageKeys.WORKSPACE_REMOVE_REFRESH_FAILED, e.getMessage()));
             }
         }
     }
@@ -804,27 +790,6 @@ public class WorkspacePanel extends UiSingletonPanel {
     private void refreshAfterRemoteConfigured(Workspace workspace) {
         refreshWorkspaceList();
         UiSingletonFactory.getInstance(TopMenuBar.class).updateWorkspaceDisplay();
-    }
-
-    /**
-     * 更新 Git 认证信息
-     */
-    private void updateGitAuthentication(Workspace workspace) {
-        UpdateAuthDialog dialog = new UpdateAuthDialog(
-                SwingUtilities.getWindowAncestor(this), workspace);
-        dialog.setVisible(true);
-
-        if (dialog.isConfirmed()) {
-            refreshWorkspaceList();
-            String logMessage = "Git authentication updated successfully for workspace: " + workspace.getName();
-
-            // 如果更新了SSH密钥，添加额外提示
-            if (dialog.getAuthType() == GitAuthType.SSH_KEY) {
-                logMessage += " (SSH session cache cleared)";
-            }
-
-            log.info(logMessage);
-        }
     }
 
     /**
@@ -945,11 +910,7 @@ public class WorkspacePanel extends UiSingletonPanel {
 
         Runnable pullAction = hasRemote ? () -> performGitPull(workspace) : null;
         Runnable pushAction = hasRemote && hasUpstream ? () -> performGitPush(workspace) : null;
-        Runnable remoteConfigAction = remoteStatusKnown
-                && !hasRemote
-                && workspace.getGitRepoSource() == GitRepoSource.INITIALIZED
-                ? () -> configureRemoteRepository(workspace)
-                : null;
+        Runnable remoteConfigAction = remoteStatusKnown ? () -> configureRemoteRepository(workspace) : null;
         return new WorkspaceDetailPanel.GitActions(
                 () -> performGitCommit(workspace),
                 pullAction,

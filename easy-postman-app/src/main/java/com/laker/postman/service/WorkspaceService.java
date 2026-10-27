@@ -22,7 +22,6 @@ import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.Paths;
 import java.util.ArrayList;
-import java.util.Comparator;
 import java.util.List;
 import java.util.UUID;
 
@@ -172,37 +171,37 @@ public class WorkspaceService {
     }
 
     /**
-     * 删除工作区
+     * 从 EasyPostman 中移除工作区记录，保留本地目录及其中的所有文件。
      */
-    public void deleteWorkspace(String workspaceId) throws Exception {
+    public void removeWorkspace(String workspaceId) {
         Workspace workspace = workspaces.stream()
                 .filter(w -> w.getId().equals(workspaceId))
                 .findFirst()
                 .orElseThrow(() -> new IllegalArgumentException(WORKSPACE_NOT_FOUND_MSG + workspaceId));
         if (WorkspaceStorageUtil.isDefaultWorkspace(workspace)) {
-            throw new IllegalArgumentException("Default workspace cannot be deleted");
-        }
-        // 删除工作区文件
-        Path workspacePath = Paths.get(workspace.getPath());
-        if (Files.exists(workspacePath)) {
-            deleteDirectoryRecursively(workspacePath);
+            throw new IllegalArgumentException("Default workspace cannot be removed");
         }
 
-        workspaces.removeIf(w -> w.getId().equals(workspaceId));
+        List<Workspace> remainingWorkspaces = new ArrayList<>(workspaces);
+        remainingWorkspaces.removeIf(w -> w.getId().equals(workspaceId));
 
-        // 如果删除的是当前工作区，切换到默认工作区
+        // 先持久化，保存失败时保持内存状态和 UI 不变。
+        WorkspaceStorageUtil.saveWorkspaces(remainingWorkspaces);
+        workspaces = remainingWorkspaces;
+
+        // 如果移除的是当前工作区，切换到默认工作区
         if (currentWorkspace != null && currentWorkspace.getId().equals(workspaceId)) {
             // 优先切换到默认工作区，找不到则取列表第一个，确保 currentWorkspace 不为 null
             currentWorkspace = getDefaultWorkspace();
             if (currentWorkspace != null) {
                 WorkspaceStorageUtil.saveCurrentWorkspace(currentWorkspace.getId());
             } else {
-                log.warn("No workspace available after deletion, currentWorkspace is null");
+                log.warn("No workspace available after removal, currentWorkspace is null");
             }
         }
 
-        saveWorkspaces();
-        log.info("Deleted workspace: {}", workspace.getName());
+        log.info("Removed workspace registration and preserved local files: {} ({})",
+                workspace.getName(), workspace.getPath());
     }
 
     public Workspace getDefaultWorkspace() {
@@ -210,23 +209,6 @@ public class WorkspaceService {
                 .filter(WorkspaceStorageUtil::isDefaultWorkspace)
                 .findFirst()
                 .orElse(workspaces.isEmpty() ? null : workspaces.get(0));
-    }
-
-    /**
-     * 递归删除目录
-     */
-    private void deleteDirectoryRecursively(Path directory) throws IOException {
-        if (Files.exists(directory)) {
-            try (var stream = Files.walk(directory)) {
-                stream.sorted(Comparator.reverseOrder())
-                        .map(Path::toFile)
-                        .forEach(file -> {
-                            if (!file.delete()) {
-                                log.warn("Failed to delete file: {}", file.getAbsolutePath());
-                            }
-                        });
-            }
-        }
     }
 
     /**
@@ -356,21 +338,27 @@ public class WorkspaceService {
         try {
             workspaces = WorkspaceStorageUtil.loadWorkspaces();
 
-            String currentWorkspaceId = WorkspaceStorageUtil.getCurrentWorkspace();
-            if (currentWorkspaceId != null) {
+            String storedCurrentWorkspaceId = WorkspaceStorageUtil.getCurrentWorkspace();
+            if (storedCurrentWorkspaceId != null) {
                 currentWorkspace = workspaces.stream()
-                        .filter(w -> w.getId().equals(currentWorkspaceId))
+                        .filter(w -> w.getId().equals(storedCurrentWorkspaceId))
                         .findFirst()
                         .orElse(null);
             }
 
             // 如果没有当前工作区但有工作区列表，设置第一个为当前工作区
+            boolean storedWorkspaceSelected = currentWorkspace != null;
             if (currentWorkspace == null && !workspaces.isEmpty()) {
                 currentWorkspace = workspaces.get(0);
                 WorkspaceStorageUtil.saveCurrentWorkspace(currentWorkspace.getId());
             }
 
-            log.info("Loaded {} workspaces", workspaces.size());
+            String selectionSource = storedWorkspaceSelected
+                    ? "saved_workspace"
+                    : storedCurrentWorkspaceId == null ? "first_available_workspace" : "saved_workspace_not_found";
+            log.info("Loaded workspaces: count={}, storedCurrentWorkspaceId={}, selectedCurrentWorkspaceId={}, selectionSource={}",
+                    workspaces.size(), storedCurrentWorkspaceId,
+                    currentWorkspace == null ? null : currentWorkspace.getId(), selectionSource);
         } catch (Exception e) {
             log.error("Failed to load workspaces", e);
             workspaces = new ArrayList<>();
@@ -393,7 +381,7 @@ public class WorkspaceService {
     }
 
     /**
-     * 为 INITIALIZED 工作区添加远程仓库
+     * 为 Git 工作区新增远程仓库或更新已有 origin。
      */
     public void addRemoteRepository(String workspaceId, String remoteUrl, String remoteBranch,
                                     GitAuthType authType, String username, String password, String token) throws Exception {
@@ -409,61 +397,19 @@ public class WorkspaceService {
         saveWorkspaces();
     }
 
+    public List<String> testRemoteConnection(String remoteUrl, GitAuthType authType,
+                                             String username, String password, String token,
+                                             String sshPrivateKeyPath, String sshPassphrase) throws Exception {
+        return requireGitService().testRemoteConnection(remoteUrl, authType, username, password, token,
+                sshPrivateKeyPath, sshPassphrase);
+    }
+
     /**
      * 获取远程仓库状态信息
      */
     public RemoteStatus getRemoteStatus(String workspaceId) throws Exception {
         Workspace workspace = getWorkspaceById(workspaceId);
         return requireGitService().getRemoteStatus(workspace);
-    }
-
-    /**
-     * 更新工作区的 Git 认证信息
-     */
-    public void updateGitAuthentication(String workspaceId, GitAuthType authType,
-                                        String username, String password, String token,
-                                        String sshKeyPath, String sshPassphrase) {
-        Workspace workspace = getWorkspaceById(workspaceId);
-        if (workspace.getType() != WorkspaceType.GIT) {
-            throw new IllegalStateException("Not a Git workspace");
-        }
-
-        if (workspace.getGitRemoteUrl() == null || workspace.getGitRemoteUrl().isEmpty()) {
-            throw new IllegalStateException("Workspace does not have a remote repository configured");
-        }
-
-        // 更新工作区的认证信息
-        workspace.setGitAuthType(authType);
-        workspace.setGitUsername(username);
-
-        if (authType == GitAuthType.PASSWORD) {
-            workspace.setGitPassword(password);
-            workspace.setGitToken(null);
-            workspace.setSshPrivateKeyPath(null);
-            workspace.setSshPassphrase(null);
-        } else if (authType == GitAuthType.TOKEN) {
-            workspace.setGitToken(token);
-            workspace.setGitPassword(null);
-            workspace.setSshPrivateKeyPath(null);
-            workspace.setSshPassphrase(null);
-        } else if (authType == GitAuthType.SSH_KEY) {
-            workspace.setSshPrivateKeyPath(sshKeyPath);
-            workspace.setSshPassphrase(sshPassphrase);
-            workspace.setGitPassword(null);
-            workspace.setGitToken(null);
-            workspace.setGitUsername(null);
-        } else if (authType == GitAuthType.NONE) {
-            workspace.setGitPassword(null);
-            workspace.setGitToken(null);
-            workspace.setGitUsername(null);
-            workspace.setSshPrivateKeyPath(null);
-            workspace.setSshPassphrase(null);
-        }
-
-        workspace.setUpdatedAt(System.currentTimeMillis());
-        saveWorkspaces();
-
-        log.info("Updated Git authentication for workspace: {}, authType: {}", workspace.getName(), authType);
     }
 
     /**

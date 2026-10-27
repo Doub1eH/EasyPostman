@@ -374,11 +374,22 @@ public final class MessageKeys {
     public static final String TAB_UNSAVED_CHANGES_TITLE = "tab.unsaved_changes.title";
     public static final String TAB_CLOSE_CURRENT = "tab.close_current";
     public static final String SAVED_RESPONSE_READONLY = "saved_response.readonly";
+    public static final String SAVED_RESPONSE_UPDATE_EXAMPLE = "saved_response.update_example";
+    public static final String SAVED_RESPONSE_SAVE_AS_NEW = "saved_response.save_as_new";
+    public static final String SAVED_RESPONSE_SAVE_CHOICE = "saved_response.save_choice";
+    public static final String SAVED_RESPONSE_UPDATED = "saved_response.updated";
     public static final String SAVED_RESPONSE_ORIGINAL_BODY_TRUNCATED = "saved_response.original_body_truncated";
     public static final String NETWORK_LOG_COPY_ACTUAL_CURL = "network_log.copy_actual_curl";
     public static final String NETWORK_LOG_COPY_ACTUAL_CURL_TOOLTIP = "network_log.copy_actual_curl.tooltip";
     public static final String NETWORK_LOG_COPY_ACTUAL_CURL_SUCCESS = "network_log.copy_actual_curl.success";
     public static final String NETWORK_LOG_COPY_ACTUAL_CURL_FAIL = "network_log.copy_actual_curl.fail";
+    public static final String NETWORK_LOG_COPY_CURRENT_TAB_TOOLTIP = "network_log.copy_current_tab.tooltip";
+    public static final String NETWORK_LOG_COPY_CURRENT_TAB_SUCCESS = "network_log.copy_current_tab.success";
+    public static final String NETWORK_LOG_COPY_CURRENT_TAB_FAIL = "network_log.copy_current_tab.fail";
+    public static final String TOP_MENU_WEBDAV_UPLOAD_ALL = "top_menu.webdav_sync.upload_all";
+    public static final String TOP_MENU_WEBDAV_RESTORE_ALL = "top_menu.webdav_sync.restore_all";
+    public static final String TOP_MENU_WEBDAV_CONFIRM_YES = "top_menu.webdav_sync.confirm_yes";
+    public static final String TOP_MENU_WEBDAV_CONFIRM_NO = "top_menu.webdav_sync.confirm_no";
     public static final String NETWORK_LOG_STAGE_PREFIX = "network_log.stage.";
     public static final String NETWORK_LOG_CONTENT_TRUNCATED = "network_log.content_truncated";
     public static final String NETWORK_LOG_LINES_OMITTED = "network_log.lines_omitted";
@@ -389,6 +400,15 @@ public final class MessageKeys {
 
     public static final String NETWORK_LOG_MESSAGE_SELECTING_PROXY = "network_log.message.selecting_proxy";
     public static final String NETWORK_LOG_MESSAGE_PROXIES = "network_log.message.proxies";
+    public static final String NETWORK_LOG_MESSAGE_PROXY_CONFIGURATION = "network_log.message.proxy_configuration";
+    public static final String NETWORK_LOG_MESSAGE_PROXY_DIAGNOSTICS_UNAVAILABLE = "network_log.message.proxy_diagnostics_unavailable";
+    public static final String NETWORK_LOG_VALUE_SYSTEM_SELECTOR = "network_log.value.system_selector";
+    public static final String NETWORK_LOG_VALUE_CUSTOM_SELECTOR = "network_log.value.custom_selector";
+    public static final String NETWORK_LOG_VALUE_MANUAL_PROXY_NOT_USED = "network_log.value.manual_proxy_not_used";
+    public static final String NETWORK_LOG_VALUE_MANUAL_PROXY_MISSING_HOST = "network_log.value.manual_proxy_missing_host";
+    public static final String NETWORK_LOG_VALUE_MANUAL_PROXY_INVALID_HOST = "network_log.value.manual_proxy_invalid_host";
+    public static final String NETWORK_LOG_VALUE_MANUAL_PROXY_INVALID_PORT = "network_log.value.manual_proxy_invalid_port";
+    public static final String NETWORK_LOG_VALUE_MANUAL_PROXY_FIELDS_PRESENT = "network_log.value.manual_proxy_fields_present";
     public static final String NETWORK_LOG_MESSAGE_TLS_START = "network_log.message.tls_start";
     public static final String NETWORK_LOG_MESSAGE_SSL_CONNECTION = "network_log.message.ssl_connection";
     public static final String NETWORK_LOG_MESSAGE_SERVER_CERTIFICATE = "network_log.message.server_certificate";
@@ -410,6 +430,48 @@ public final class MessageKeys {
     public static final String NETWORK_LOG_MESSAGE_CACHE_MISS = "network_log.message.cache_miss";
     public static final String NETWORK_LOG_MESSAGE_CACHE_CONDITIONAL_HIT = "network_log.message.cache_conditional_hit";
     public static final String NETWORK_LOG_MESSAGE_SATISFACTION_FAILURE = "network_log.message.satisfaction_failure";
+    public static final String NETWORK_LOG_MESSAGE_PROXY_FALLBACK = "network_log.message.proxy_fallback";
+    public static final String NETWORK_LOG_MESSAGE_JVM_SOCKS_ACTIVE = "network_log.message.jvm_socks_active";
+    public static final String NETWORK_LOG_MESSAGE_CONNECTION_REUSED = "network_log.message.connection_reused";
+    public static final String NETWORK_LOG_MESSAGE_HEADER_SNAPSHOT = "network_log.message.header_snapshot";
+    public static final String NETWORK_LOG_MESSAGE_HEADER_SNAPSHOT_HTTP2 = "network_log.message.header_snapshot_http2";
+    public static final String NETWORK_LOG_MESSAGE_REQUEST_BODY_PREVIEW_UNAVAILABLE = "network_log.message.request_body_preview_unavailable";
+    public static final String NETWORK_LOG_MESSAGE_HEADERS_UNCHANGED = "network_log.message.headers_unchanged";
+    public static final String NETWORK_LOG_MESSAGE_RESPONSE_WAIT = "network_log.message.response_wait";
+    public static final String NETWORK_LOG_MESSAGE_TLS_CONNECTION = "network_log.message.tls_connection";
+    public static final String NETWORK_LOG_MESSAGE_TLS_VERIFICATION_DISABLED = "network_log.message.tls_verification_disabled";
+    public static final String NETWORK_LOG_MESSAGE_TLS_VERIFICATION_ENABLED = "network_log.message.tls_verification_enabled";
+    public static final String NETWORK_LOG_MESSAGE_TLS_VERIFICATION_PASSED = "network_log.message.tls_verification_passed";
+    public static final String NETWORK_LOG_MESSAGE_STATUS = "network_log.message.status";
+    public static final String NETWORK_LOG_MESSAGE_FINAL_REQUEST = "network_log.message.final_request";
+    public static final String NETWORK_LOG_MESSAGE_REDIRECT_COUNT = "network_log.message.redirect_count";
+    public static final String NETWORK_LOG_MESSAGE_TOTAL_DURATION = "network_log.message.total_duration";
+    public static final String NETWORK_LOG_MESSAGE_REDIRECT_NUMBER = "network_log.message.redirect_number";
+    public static final String NETWORK_LOG_MESSAGE_REDIRECT_FROM = "network_log.message.redirect_from";
+    public static final String NETWORK_LOG_MESSAGE_REDIRECT_TO = "network_log.message.redirect_to";
+    public static final String NETWORK_LOG_MESSAGE_REDIRECT_CROSS_ORIGIN = "network_log.message.redirect_cross_origin";
+    public static final String NETWORK_LOG_MESSAGE_REDIRECT_METHOD_CHANGED = "network_log.message.redirect_method_changed";
+    public static final String NETWORK_LOG_MESSAGE_REDIRECT_REMOVED_HEADERS = "network_log.message.redirect_removed_headers";
+    public static final String NETWORK_LOG_MESSAGE_REDIRECT_STOPPED = "network_log.message.redirect_stopped";
+    public static final String NETWORK_LOG_MESSAGE_REDIRECT_DISABLED = "network_log.message.redirect_disabled";
+    public static final String NETWORK_LOG_MESSAGE_REDIRECT_LIMIT = "network_log.message.redirect_limit";
+    public static final String NETWORK_LOG_MESSAGE_REDIRECT_MISSING_LOCATION = "network_log.message.redirect_missing_location";
+    public static final String NETWORK_LOG_MESSAGE_REDIRECT_MAX = "network_log.message.redirect_max";
+    public static final String NETWORK_LOG_PREPARED_BODY_TYPE = "network_log.prepared.body_type";
+    public static final String NETWORK_LOG_PREPARED_CONFIGURED_HEADERS = "network_log.prepared.configured_headers";
+    public static final String NETWORK_LOG_PREPARED_QUERY_PARAMS = "network_log.prepared.query_params";
+    public static final String NETWORK_LOG_PREPARED_PATH_VARIABLES = "network_log.prepared.path_variables";
+    public static final String NETWORK_LOG_PREPARED_FORM_DATA = "network_log.prepared.form_data";
+    public static final String NETWORK_LOG_PREPARED_URLENCODED = "network_log.prepared.urlencoded";
+    public static final String NETWORK_LOG_PREPARED_PRE_SCRIPT = "network_log.prepared.pre_script";
+    public static final String NETWORK_LOG_PREPARED_POST_SCRIPT = "network_log.prepared.post_script";
+    public static final String NETWORK_LOG_PREPARED_SESSION = "network_log.prepared.session";
+    public static final String NETWORK_LOG_PREPARED_TRANSPORT = "network_log.prepared.transport";
+    public static final String NETWORK_LOG_VALUE_NO_TIMEOUT = "network_log.value.no_timeout";
+    public static final String NETWORK_LOG_VALUE_ENABLED = "network_log.value.enabled";
+    public static final String NETWORK_LOG_VALUE_DISABLED = "network_log.value.disabled";
+    public static final String NETWORK_LOG_VALUE_HTTP_AUTO = "network_log.value.http_auto";
+    public static final String NETWORK_LOG_PREPARED_TIMING_ORIGIN = "network_log.prepared.timing_origin";
 
 
     // ============ Bulk Edit 相关 ============
@@ -432,6 +494,9 @@ public final class MessageKeys {
     public static final String REQUEST_ASSISTANT_COLLAPSE = "request.assistant.collapse";
     public static final String REQUEST_ASSISTANT_CODE_SNIPPET_TITLE = "request.assistant.code_snippet.title";
     public static final String REQUEST_ASSISTANT_CODE_COPIED = "request.assistant.code_snippet.copied";
+    public static final String REQUEST_ASSISTANT_CODE_RESOLVE_VARIABLES = "request.assistant.code_snippet.resolve_variables";
+    public static final String REQUEST_ASSISTANT_CODE_RESOLVE_VARIABLES_TOOLTIP = "request.assistant.code_snippet.resolve_variables.tooltip";
+    public static final String REQUEST_ASSISTANT_CODE_DIGEST_UNSUPPORTED = "request.assistant.code_snippet.digest_unsupported";
     public static final String JSON_MODEL_GENERATOR_TITLE = "json.model_generator.title";
     public static final String JSON_MODEL_GENERATOR_HINT = "json.model_generator.hint";
     public static final String JSON_MODEL_GENERATOR_LANGUAGE = "json.model_generator.language";
@@ -653,7 +718,15 @@ public final class MessageKeys {
     public static final String WORKSPACE_CLONE_FROM_REMOTE = "workspace.clone.from.remote";
     public static final String WORKSPACE_INIT_LOCAL = "workspace.init.local";
     public static final String WORKSPACE_RENAME = "workspace.rename";
+    public static final String WORKSPACE_REMOVE = "workspace.remove";
+    public static final String WORKSPACE_REMOVE_CONFIRM = "workspace.remove.confirm";
+    public static final String WORKSPACE_REMOVE_FAILED = "workspace.remove.failed";
+    public static final String WORKSPACE_REMOVE_REFRESH_FAILED = "workspace.remove.refresh.failed";
+    /** @deprecated Use {@link #WORKSPACE_REMOVE}. */
+    @Deprecated
     public static final String WORKSPACE_DELETE = "workspace.delete";
+    /** @deprecated Use {@link #WORKSPACE_REMOVE_CONFIRM}. */
+    @Deprecated
     public static final String WORKSPACE_DELETE_CONFIRM = "workspace.delete.confirm";
     public static final String WORKSPACE_SWITCH = "workspace.switch";
     public static final String WORKSPACE_INFO = "workspace.info";
@@ -663,9 +736,6 @@ public final class MessageKeys {
     public static final String WORKSPACE_GIT_HISTORY = "workspace.git.history";
     public static final String WORKSPACE_GIT_DIFF = "workspace.git.diff";
     public static final String WORKSPACE_GIT_BRANCHES = "workspace.git.branches";
-    public static final String WORKSPACE_GIT_AUTH_UPDATE = "workspace.git.auth.update";
-    public static final String WORKSPACE_GIT_AUTH_UPDATE_SUCCESS = "workspace.git.auth.update.success";
-    public static final String WORKSPACE_GIT_AUTH_UPDATE_FAILED = "workspace.git.auth.update.failed";
 
     // Git History
     public static final String GIT_HISTORY_TITLE = "git.history.title";
@@ -1768,6 +1838,29 @@ public final class MessageKeys {
 
     // ============ OkHttpResponseHandler ============
     public static final String DOWNLOAD_PROGRESS_TITLE = "download.progress.title";
+    public static final String DOWNLOAD_PROGRESS_DOWNLOADED = "download.progress.downloaded";
+    public static final String DOWNLOAD_PROGRESS_DOWNLOADED_TOTAL = "download.progress.downloaded_total";
+    public static final String DOWNLOAD_PROGRESS_RECEIVED = "download.progress.received";
+    public static final String DOWNLOAD_PROGRESS_SPEED = "download.progress.speed";
+    public static final String DOWNLOAD_PROGRESS_ELAPSED = "download.progress.elapsed";
+    public static final String DOWNLOAD_PROGRESS_REMAINING = "download.progress.remaining";
+    public static final String DOWNLOAD_PROGRESS_REMAINING_WAITING = "download.progress.remaining_waiting";
+    public static final String DOWNLOAD_PROGRESS_TOTAL_UNKNOWN = "download.progress.total_unknown";
+    public static final String DOWNLOAD_PROGRESS_SPEED_AXIS = "download.progress.speed_axis";
+    public static final String DOWNLOAD_PROGRESS_TIME_AXIS = "download.progress.time_axis";
+    public static final String DOWNLOAD_PROGRESS_CONNECTED = "download.progress.connected";
+    public static final String DOWNLOAD_PROGRESS_RECEIVING = "download.progress.receiving";
+    public static final String DOWNLOAD_PROGRESS_WAITING = "download.progress.waiting";
+    public static final String DOWNLOAD_PROGRESS_FINISHED = "download.progress.finished";
+    public static final String DOWNLOAD_PROGRESS_FAILED = "download.progress.failed";
+    public static final String DOWNLOAD_PROGRESS_STOPPED = "download.progress.stopped";
+    public static final String DOWNLOAD_PROGRESS_CANCELLED_BODY = "download.progress.cancelled_body";
+    public static final String STREAM_RESPONSE_TITLE = "stream.response.title";
+    public static final String STREAM_RESPONSE_HINT = "stream.response.hint";
+    public static final String STREAM_RESPONSE_TIME_AXIS = "stream.response.time_axis";
+    public static final String STREAM_RESPONSE_COPY_ADDRESS = "stream.response.copy_address";
+    public static final String STREAM_RESPONSE_COPY_ADDRESS_TOOLTIP = "stream.response.copy_address.tooltip";
+    public static final String STREAM_RESPONSE_STOP = "stream.response.stop";
     public static final String DOWNLOAD_CANCELLED = "download.cancelled";
     public static final String BINARY_TOO_LARGE = "binary.too.large";
     public static final String BINARY_TOO_LARGE_BODY = "binary.too.large.body";
@@ -2004,11 +2097,14 @@ public final class MessageKeys {
 
     // ============ 工作区远程配置相关 ============
     public static final String WORKSPACE_REMOTE_CONFIG_TITLE = "workspace.remote.config.title";
-    public static final String WORKSPACE_CONFIG_PROGRESS = "workspace.config.progress";
     public static final String WORKSPACE_CONFIG_PROGRESS_START = "workspace.config.progress.start";
     public static final String WORKSPACE_CONFIG_PROGRESS_VALIDATING = "workspace.config.progress.validating";
     public static final String WORKSPACE_CONFIG_PROGRESS_DONE = "workspace.config.progress.done";
     public static final String WORKSPACE_CONFIG_PROGRESS_FAILED = "workspace.config.progress.failed";
+    public static final String WORKSPACE_CONFIG_TEST_CONNECTION = "workspace.config.test.connection";
+    public static final String WORKSPACE_CONFIG_TEST_CONNECTION_TOOLTIP = "workspace.config.test.connection.tooltip";
+    public static final String WORKSPACE_CONFIG_TESTING_CONNECTION = "workspace.config.testing.connection";
+    public static final String WORKSPACE_CONFIG_TEST_CONNECTION_SUCCESS = "workspace.config.test.connection.success";
     public static final String WORKSPACE_VALIDATION_GIT_URL_INVALID = "workspace.validation.git.url.invalid";
 
     // ============ 自动更新设置相关 ============
@@ -2199,6 +2295,19 @@ public final class MessageKeys {
     public static final String GIT_DIALOG_CHECKING_STATUS_AND_CONFLICT = "git.dialog.checkingStatusAndConflict";
     public static final String GIT_DIALOG_STATUS_CHECK_DONE = "git.dialog.statusCheckDone";
     public static final String GIT_DIALOG_STATUS_CHECK_FAILED = "git.dialog.statusCheckFailed";
+    public static final String GIT_DIALOG_REMOTE_STATUS_UNAVAILABLE = "git.dialog.remoteStatusUnavailable";
+    public static final String GIT_DIALOG_RETRY_CHECK = "git.dialog.retryCheck";
+    public static final String GIT_DIALOG_ACTION_REASON_CHECKING = "git.dialog.actionReason.checking";
+    public static final String GIT_DIALOG_ACTION_REASON_NO_CHANGES = "git.dialog.actionReason.noChanges";
+    public static final String GIT_DIALOG_ACTION_REASON_HAS_CONFLICTS = "git.dialog.actionReason.hasConflicts";
+    public static final String GIT_DIALOG_ACTION_REASON_COMMIT_MESSAGE = "git.dialog.actionReason.commitMessage";
+    public static final String GIT_DIALOG_ACTION_REASON_REMOTE_UNAVAILABLE = "git.dialog.actionReason.remoteUnavailable";
+    public static final String GIT_DIALOG_ACTION_REASON_NO_REMOTE = "git.dialog.actionReason.noRemote";
+    public static final String GIT_DIALOG_ACTION_REASON_NO_UPSTREAM = "git.dialog.actionReason.noUpstream";
+    public static final String GIT_DIALOG_ACTION_REASON_NO_REMOTE_CHANGES = "git.dialog.actionReason.noRemoteChanges";
+    public static final String GIT_DIALOG_ACTION_REASON_NO_LOCAL_COMMITS = "git.dialog.actionReason.noLocalCommits";
+    public static final String GIT_DIALOG_ACTION_REASON_UNCOMMITTED_CHANGES = "git.dialog.actionReason.uncommittedChanges";
+    public static final String GIT_DIALOG_ACTION_REASON_CHOOSE_STRATEGY = "git.dialog.actionReason.chooseStrategy";
     public static final String GIT_DIALOG_STATUS_SUMMARY = "git.dialog.statusSummary";
     public static final String GIT_DIALOG_HAS_UNCOMMITTED_CHANGES = "git.dialog.hasUncommittedChanges";
     public static final String GIT_DIALOG_HAS_LOCAL_COMMITS = "git.dialog.hasLocalCommits";
@@ -2229,7 +2338,6 @@ public final class MessageKeys {
     // 步骤指示器相关
     public static final String STEP_CHECK_STATUS = "step.checkStatus";
     public static final String STEP_CONFIRM_CHANGE = "step.confirmChange";
-    public static final String STEP_SELECT_STRATEGY = "step.selectStrategy";
     public static final String STEP_EXECUTE_OPERATION = "step.executeOperation";
 
     // ============ GitOperationDialog 缺失的国际化键 ============
@@ -2493,9 +2601,11 @@ public final class MessageKeys {
     public static final String SETTINGS_WEBDAV_SYNC_TEST_SUCCESS = "settings.webdav_sync.test.success";
     public static final String SETTINGS_WEBDAV_SYNC_UPLOAD_SUCCESS = "settings.webdav_sync.upload.success";
     public static final String SETTINGS_WEBDAV_SYNC_RESTORE_SUCCESS = "settings.webdav_sync.restore.success";
-    public static final String SETTINGS_WEBDAV_SYNC_RESTORE_SUCCESS_SHORT = "settings.webdav_sync.restore.success.short";
     public static final String SETTINGS_WEBDAV_SYNC_RESTORE_RESTART_TITLE = "settings.webdav_sync.restore.restart.title";
     public static final String SETTINGS_WEBDAV_SYNC_RESTORE_RESTART_MESSAGE = "settings.webdav_sync.restore.restart.message";
+    public static final String SETTINGS_WEBDAV_SYNC_RESTORE_FAILED_TITLE = "settings.webdav_sync.restore.failed.title";
+    public static final String SETTINGS_WEBDAV_SYNC_RESTORE_INVALID_SNAPSHOT = "settings.webdav_sync.restore.invalid_snapshot";
+    public static final String SETTINGS_WEBDAV_SYNC_RESTORE_SIZE_MISMATCH = "settings.webdav_sync.restore.size_mismatch";
     public static final String SETTINGS_WEBDAV_SYNC_ACTION_FAILED = "settings.webdav_sync.action.failed";
     public static final String SETTINGS_WEBDAV_SYNC_SNAPSHOT_PRECHECK_FAILED = "settings.webdav_sync.snapshot.precheck.failed";
     public static final String SETTINGS_WEBDAV_SYNC_VALIDATION_REQUIRED = "settings.webdav_sync.validation.required";
