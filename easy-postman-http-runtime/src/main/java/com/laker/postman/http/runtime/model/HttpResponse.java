@@ -1,5 +1,6 @@
 package com.laker.postman.http.runtime.model;
 
+import com.laker.postman.http.runtime.file.ResponseFiles;
 import com.laker.postman.util.HttpHeaderConstants;
 
 import java.util.List;
@@ -11,6 +12,32 @@ import java.util.Map;
 public class HttpResponse {
     public Map<String, List<String>> headers;
     public String body;
+    /**
+     * 原始响应体字节，仅在完整读取、未落临时文件，且识别为文件/附件或文本无法无损还原原始字节时保留。
+     * 普通 UTF-8 文本响应不保留，{@link #body} 按 UTF-8 编码即可还原原始字节。
+     * 下载响应时必须优先使用该字段，避免预览文本的字符集转换破坏原始内容。
+     */
+    public transient byte[] rawBodyBytes;
+    /**
+     * 根据响应体特征高置信识别出的文件扩展名（包含点），未识别时为 null。
+     */
+    public transient String detectedFileExtension;
+    /**
+     * Content-Disposition 声明为 attachment，说明服务端希望以文件方式下载（inline 不算）。
+     */
+    public transient boolean fileAttachment;
+    /**
+     * 文件响应的内容未被保留（如从只保存元信息的示例中恢复），此时只能展示文件信息，无法下载。
+     */
+    public transient boolean fileContentOmitted;
+    /**
+     * 响应头已收到，但读取响应体时连接中断，{@link #body} 只是错误提示而非真实内容。
+     */
+    public transient boolean bodyIncomplete;
+    /**
+     * PREVIEW 模式下响应体超过读取上限，{@link #body} 只保留了前缀（未追加任何提示文本）。
+     */
+    public transient boolean bodyPreviewTruncated;
     public int code; // 添加响应状态码字段
     public String threadName; // 添加线程名称字段
     public String filePath; // 临时文件下载路径字段
@@ -42,13 +69,29 @@ public class HttpResponse {
     }
 
     /**
-     * 简化对象，将渲染时不需要的字段置为 null，减少内存占用
-     * 保留的字段：code, protocol, threadName, httpEventInfo, headers, body, costMs, endTime, bodySize, headersSize, idleConnectionCount, connectionCount
-     * 置为 null 的字段：filePath, fileName
+     * 响应体被识别为二进制文件（或文件内容已被省略），其 {@link #body} 文本不适合直接展示。
+     */
+    public boolean isRecognizedFile() {
+        return detectedFileExtension != null || fileContentOmitted;
+    }
+
+    /**
+     * 简化对象，将渲染时不需要的字段置为 null，减少内存占用。
+     * 保留的字段：code, protocol, threadName, httpEventInfo, headers, body, costMs, endTime, bodySize, headersSize,
+     * idleConnectionCount, connectionCount, detectedFileExtension, fileAttachment；
+     * 置为 null 的字段：filePath, rawBodyBytes；fileName 保留用于展示文件信息。
+     * 文件响应（见 {@link ResponseFiles#isFileResponse}）不保留按文本解码出的乱码或临时文件提示，
+     * 并标记内容已省略，渲染时只展示文件信息。
      */
     public void simplify() {
+        // 正确声明 MIME 的二进制文件（PDF/PNG 等）不会设置 detectedFileExtension，同样按文件处理
+        boolean file = ResponseFiles.isFileResponse(this);
         this.filePath = null;    // 文件下载路径，渲染时不需要
-        this.fileName = null;    // 文件下载名称，渲染时不需要
+        this.rawBodyBytes = null; // 原始响应体字节，渲染时不需要
+        if (file) {
+            this.body = "";
+            this.fileContentOmitted = true;
+        }
         // isSse, idleConnectionCount, connectionCount 保留（Timing标签页可能需要）
     }
 }

@@ -27,6 +27,10 @@ public class CollectionDocumentJsonCodec {
         return fromJson(JSONUtil.readJSONArray(file, StandardCharsets.UTF_8));
     }
 
+    public CollectionDocument read(String content) {
+        return fromJson(JSONUtil.parseArray(content));
+    }
+
     public void write(File file, CollectionDocument document) throws IOException {
         try (Writer writer = new OutputStreamWriter(new FileOutputStream(file), StandardCharsets.UTF_8)) {
             writer.write(toJson(document).toStringPretty());
@@ -167,6 +171,7 @@ public class CollectionDocumentJsonCodec {
 
     private CollectionNode fromRequestJson(JSONObject requestJson) {
         JSONObject dataJson = requestJson.getJSONObject("data");
+        RequestProtocolStorageMigration.normalizeLegacySseProtocol(dataJson);
         HttpRequestItem item = JSONUtil.toBean(dataJson, HttpRequestItem.class);
         item.setBody(item.getBody() != null ? item.getBody() : "");
         SavedResponseSnapshotMapper.sanitizeSavedResponses(item);

@@ -812,6 +812,7 @@ public class ModuleArchitectureBoundaryTest {
                 "easy-postman-app/src/main/java/com/laker/postman/http/request",
                 "easy-postman-http-runtime/src/main/java/com/laker/postman/http/runtime/transport",
                 "easy-postman-http-runtime/src/main/java/com/laker/postman/http/runtime/okhttp",
+                "easy-postman-http-runtime/src/main/java/com/laker/postman/http/runtime/file",
                 "easy-postman-http-runtime/src/main/java/com/laker/postman/http/runtime/ssl",
                 "easy-postman-http-runtime/src/main/java/com/laker/postman/http/runtime/sse",
                 "easy-postman-http-runtime/src/main/java/com/laker/postman/http/runtime/cookie",
@@ -836,6 +837,7 @@ public class ModuleArchitectureBoundaryTest {
         for (String runtimeSource : List.of(
                 "easy-postman-http-runtime/src/main/java/com/laker/postman/http/runtime/transport",
                 "easy-postman-http-runtime/src/main/java/com/laker/postman/http/runtime/okhttp",
+                "easy-postman-http-runtime/src/main/java/com/laker/postman/http/runtime/file",
                 "easy-postman-http-runtime/src/main/java/com/laker/postman/http/runtime/ssl",
                 "easy-postman-http-runtime/src/main/java/com/laker/postman/http/runtime/sse",
                 "easy-postman-http-runtime/src/main/java/com/laker/postman/http/runtime/interaction",
@@ -1467,11 +1469,21 @@ public class ModuleArchitectureBoundaryTest {
     @Test
     public void pluginIconReferencesUsePluginOrSharedUiResources() throws IOException {
         Path root = repositoryRoot();
+        Path pluginsRoot = root.resolve("easy-postman-plugins");
         Set<String> uiIcons = resourceFileNames(root.resolve("easy-postman-ui/src/main/resources/icons"));
-        Set<String> pluginIcons = pluginIconFileNames(root.resolve("easy-postman-plugins"));
+        Set<String> pluginIcons = pluginIconFileNames(pluginsRoot);
         Set<String> appIcons = resourceFileNames(root.resolve("easy-postman-app/src/main/resources/icons"));
 
-        List<String> violations = javaSourceFiles(root.resolve("easy-postman-plugins")).stream()
+        List<Path> pluginSourceFiles = new ArrayList<>();
+        try (var modules = Files.newDirectoryStream(pluginsRoot)) {
+            for (Path module : modules) {
+                Path sourceRoot = module.resolve("src");
+                if (Files.isDirectory(sourceRoot)) {
+                    pluginSourceFiles.addAll(javaSourceFiles(sourceRoot));
+                }
+            }
+        }
+        List<String> violations = pluginSourceFiles.stream()
                 .flatMap(file -> iconReferences(file).stream()
                         .filter(icon -> !uiIcons.contains(icon) && !pluginIcons.contains(icon))
                         .map(icon -> file + " references app-only or missing icon " + icon
@@ -1490,6 +1502,8 @@ public class ModuleArchitectureBoundaryTest {
         try (Stream<Path> files = Files.walk(root)) {
             metadataFiles = files
                     .filter(path -> path.getFileName().toString().equals(".DS_Store"))
+                    // 只检查会被打包的源码目录；仓库根目录等处的 Finder 文件已被 .gitignore 忽略，不影响产物
+                    .filter(path -> path.toString().contains("/src/"))
                     .filter(path -> !path.toString().contains("/.git/"))
                     .filter(path -> !path.toString().contains("/target/"))
                     .toList();
@@ -1502,6 +1516,7 @@ public class ModuleArchitectureBoundaryTest {
         try (Stream<Path> files = Files.walk(root)) {
             return files
                     .filter(path -> path.getFileName().toString().endsWith(".java"))
+                    .filter(Files::isRegularFile)
                     .toList();
         }
     }

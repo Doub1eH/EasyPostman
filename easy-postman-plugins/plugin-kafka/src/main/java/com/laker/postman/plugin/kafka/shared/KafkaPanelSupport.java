@@ -5,11 +5,13 @@ import com.laker.postman.plugin.kafka.consumer.KafkaConsumeStartMode;
 import com.laker.postman.util.JsonUtil;
 import com.laker.postman.common.component.notification.NotificationCenter;
 import lombok.extern.slf4j.Slf4j;
+import org.apache.kafka.clients.CommonClientConfigs;
 import org.apache.kafka.clients.consumer.KafkaConsumer;
 import org.apache.kafka.clients.consumer.OffsetAndMetadata;
 import org.apache.kafka.clients.consumer.OffsetAndTimestamp;
 import org.apache.kafka.common.PartitionInfo;
 import org.apache.kafka.common.TopicPartition;
+import org.apache.kafka.common.config.SaslConfigs;
 import org.apache.kafka.common.header.Header;
 import org.apache.kafka.common.header.internals.RecordHeader;
 
@@ -28,10 +30,85 @@ public final class KafkaPanelSupport {
 
     private static final DateTimeFormatter TIME_FORMATTER = DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm:ss.SSS");
 
+    /**
+     * Admin/Producer 客户端超时。远程 SASL 握手 + 元数据 + 连接 advertised broker 在慢网络下 3 秒不够。
+     */
+    public static final int CLIENT_TIMEOUT_MS = 10_000;
+
+    /**
+     * 外层 Future 等待额外宽限，确保 Kafka 客户端自身的超时（带具体原因）先于
+     * 无信息的 java.util.concurrent.TimeoutException 触发。
+     */
+    public static final long FUTURE_WAIT_GRACE_MS = 5_000;
+
     private KafkaPanelSupport() {
     }
+
+    public static long futureWaitMs(long clientTimeoutMs) {
+        return clientTimeoutMs + FUTURE_WAIT_GRACE_MS;
+    }
+
+    public static boolean isTimeout(Throwable throwable) {
+        Throwable current = throwable;
+        while (current != null) {
+            if (current instanceof java.util.concurrent.TimeoutException
+                    || current instanceof org.apache.kafka.common.errors.TimeoutException) {
+                return true;
+            }
+            if (current.getCause() == current) {
+                break;
+            }
+            current = current.getCause();
+        }
+        return false;
+    }
+
     public static String escapeJaasValue(String text) {
         return text.replace("\\", "\\\\").replace("\"", "\\\"");
+    }
+
+    public static boolean isSaslProtocol(String securityProtocol) {
+        return securityProtocol != null && securityProtocol.startsWith("SASL");
+    }
+
+    /**
+     * 构建 Admin/Producer/Consumer 共用的连接属性（bootstrap、client.id、security.protocol、SASL JAAS）。
+     */
+    public static Properties buildClientProperties(String bootstrapServers,
+                                                   String clientId,
+                                                   String securityProtocol,
+                                                   String saslMechanism,
+                                                   String username,
+                                                   String password,
+                                                   String missingCredentialMessage) {
+        Properties props = new Properties();
+        props.put(CommonClientConfigs.BOOTSTRAP_SERVERS_CONFIG, bootstrapServers);
+        if (clientId != null && !clientId.isBlank()) {
+            props.put(CommonClientConfigs.CLIENT_ID_CONFIG, clientId);
+        }
+        props.put(CommonClientConfigs.SECURITY_PROTOCOL_CONFIG, securityProtocol);
+        if (isSaslProtocol(securityProtocol)) {
+            if (username == null || username.isBlank() || password == null || password.isBlank()) {
+                throw new IllegalArgumentException(missingCredentialMessage);
+            }
+            String loginModule = saslMechanism.startsWith("SCRAM")
+                    ? "org.apache.kafka.common.security.scram.ScramLoginModule"
+                    : "org.apache.kafka.common.security.plain.PlainLoginModule";
+            props.put(SaslConfigs.SASL_MECHANISM, saslMechanism);
+            props.put(SaslConfigs.SASL_JAAS_CONFIG, loginModule
+                    + " required username=\"" + escapeJaasValue(username)
+                    + "\" password=\"" + escapeJaasValue(password) + "\";");
+        }
+        return props;
+    }
+
+    public static String rootMessage(Throwable throwable) {
+        Throwable current = throwable;
+        while (current.getCause() != null && current.getCause() != current) {
+            current = current.getCause();
+        }
+        String msg = current.getMessage();
+        return (msg == null || msg.isBlank()) ? current.toString() : msg;
     }
 
     public static Long parseConsumeStartValue(KafkaConsumeStartMode consumeStartMode, String startValueText) {

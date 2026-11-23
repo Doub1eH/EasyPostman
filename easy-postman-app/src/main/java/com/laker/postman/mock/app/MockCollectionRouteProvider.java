@@ -2,14 +2,19 @@ package com.laker.postman.mock.app;
 
 import com.laker.postman.collection.model.CollectionDocument;
 import com.laker.postman.collection.model.CollectionNode;
+import com.laker.postman.http.runtime.file.ResponseFiles;
 import com.laker.postman.ioc.Component;
 import com.laker.postman.mock.model.MockResponse;
 import com.laker.postman.mock.model.MockRoute;
+import com.laker.postman.mock.runtime.LocalMockServer;
 import com.laker.postman.request.model.HttpHeader;
 import com.laker.postman.request.model.HttpParam;
 import com.laker.postman.request.model.HttpRequestItem;
 import com.laker.postman.request.model.SavedResponse;
 import com.laker.postman.service.collections.CollectionDocumentRegistry;
+import com.laker.postman.service.collections.SavedResponseSnapshotMapper;
+import com.laker.postman.util.I18nUtil;
+import com.laker.postman.util.MessageKeys;
 
 import java.net.URI;
 import java.net.URLDecoder;
@@ -189,11 +194,11 @@ public class MockCollectionRouteProvider {
                 : request.getHeadersList();
         String requestBody = firstNonBlank(original == null ? null : original.getBody(), request.getBody(), "");
 
-        MockResponse response = new MockResponse(
-                example.getCode() <= 0 ? 200 : example.getCode(),
-                singleValueHeaders(example.getHeaders()),
-                example.getBody() == null ? "" : example.getBody()
-        );
+        int statusCode = example.getCode() <= 0 ? 200 : example.getCode();
+        MockResponse response = isFileContentUnavailable(example, method, statusCode)
+                ? fileContentUnavailableResponse(example)
+                : new MockResponse(statusCode, singleValueHeaders(example.getHeaders()),
+                example.getBody() == null ? "" : example.getBody());
         response.setDelayMs(Math.max(0, example.getMockDelayMs()));
         if (response.getHeader("Content-Type") == null) {
             response.setHeader("Content-Type", contentType(example.getPreviewLanguage()));
@@ -218,6 +223,34 @@ public class MockCollectionRouteProvider {
                 response,
                 example.getMockScript()
         );
+    }
+
+    /**
+     * 文件示例只保存了文件信息（或是旧版本保存的乱码文本），没有可返回的原始内容。
+     */
+    static boolean isFileContentUnavailable(SavedResponse example, String method, int statusCode) {
+        // HEAD、1xx、204、205、304 本就没有正文，Mock 时无需文件内容
+        if (LocalMockServer.isBodyless(method, statusCode)) {
+            return false;
+        }
+        SavedResponse.FileInfo file = example.getFile();
+        if (file != null) {
+            // 零字节文件不需要内容即可如实返回
+            return !file.isContentInBody() && example.getBodySize() > 0;
+        }
+        return ResponseFiles.detectFromLegacyText(example.getBody()) != null
+                || SavedResponseSnapshotMapper.isLegacyBinaryPlaceholder(example);
+    }
+
+    /**
+     * 不能用原状态码和响应头返回空正文（客户端会收到 0 字节的“文件”），改为明确的 501 说明；
+     * Mock 脚本仍可覆盖该响应。
+     */
+    private MockResponse fileContentUnavailableResponse(SavedResponse example) {
+        Map<String, String> headers = new LinkedHashMap<>();
+        headers.put("Content-Type", "text/plain; charset=UTF-8");
+        return new MockResponse(501, headers, I18nUtil.getMessage(
+                MessageKeys.MOCK_EXAMPLE_FILE_CONTENT_UNAVAILABLE, firstNonBlank(example.getName(), "")));
     }
 
     static String extractPath(String rawUrl) {

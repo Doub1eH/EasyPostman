@@ -204,6 +204,10 @@ public class PerformanceWorkerProtocolJsonStorage {
         json.put("responseCode", safeDetail.getResponseCode());
         json.put("costMs", safeDetail.getCostMs());
         json.put("executionFailed", safeDetail.isExecutionFailed());
+        json.put("cancelled", safeDetail.isCancelled());
+        json.put("startTimeMs", safeDetail.getStartTimeMs());
+        json.put("latencyMs", safeDetail.getLatencyMs());
+        json.put("connectMs", safeDetail.getConnectMs());
         json.put("request", requestToMap(safeDetail.getRequest()));
         json.put("response", responseToMap(safeDetail.getResponse()));
         json.put("testResults", testsToList(safeDetail.getTestResults()));
@@ -235,6 +239,9 @@ public class PerformanceWorkerProtocolJsonStorage {
         json.put("endTimeMs", response.getEndTimeMs());
         json.put("bodySize", response.getBodySize());
         json.put("headersSize", response.getHeadersSize());
+        json.put("fileName", response.getFileName());
+        json.put("detectedFileExtension", response.getDetectedFileExtension());
+        json.put("fileContentOmitted", response.isFileContentOmitted());
         return json;
     }
 
@@ -264,6 +271,10 @@ public class PerformanceWorkerProtocolJsonStorage {
                     .responseCode(intValue(json, "responseCode", 0))
                     .costMs(intValue(json, "costMs", 0))
                     .executionFailed(booleanValue(json, "executionFailed", false))
+                    .cancelled(booleanValue(json, "cancelled", false))
+                    .startTimeMs(longValue(json, "startTimeMs", -1L))
+                    .latencyMs(longValue(json, "latencyMs", -1L))
+                    .connectMs(longValue(json, "connectMs", -1L))
                     .request(readRequest(objectMap(json.get("request"))))
                     .response(readResponse(objectMap(json.get("response"))))
                     .testResults(readTests(listValue(json.get("testResults"))))
@@ -297,6 +308,9 @@ public class PerformanceWorkerProtocolJsonStorage {
                 .endTimeMs(longValue(json, "endTimeMs", 0))
                 .bodySize(longValue(json, "bodySize", 0))
                 .headersSize(longValue(json, "headersSize", 0))
+                .fileName(stringValue(json, "fileName", null))
+                .detectedFileExtension(stringValue(json, "detectedFileExtension", null))
+                .fileContentOmitted(booleanValue(json, "fileContentOmitted", false))
                 .build();
     }
 
@@ -357,6 +371,7 @@ public class PerformanceWorkerProtocolJsonStorage {
         json.put("receivedRate", finiteOrNull(metrics.receivedRate()));
         json.put("matchedRate", finiteOrNull(metrics.matchedRate()));
         json.put("avgFirstMessageLatencyMs", finiteOrNull(metrics.avgFirstMessageLatencyMs()));
+        json.put("maxDurationMs", finiteOrNull(metrics.maxDurationMs()));
         return json;
     }
 
@@ -391,7 +406,8 @@ public class PerformanceWorkerProtocolJsonStorage {
                 doubleValue(json, "sentRate", Double.NaN),
                 doubleValue(json, "receivedRate", Double.NaN),
                 doubleValue(json, "matchedRate", Double.NaN),
-                doubleValue(json, "avgFirstMessageLatencyMs", Double.NaN)
+                doubleValue(json, "avgFirstMessageLatencyMs", Double.NaN),
+                doubleValue(json, "maxDurationMs", Double.NaN)
         );
     }
 

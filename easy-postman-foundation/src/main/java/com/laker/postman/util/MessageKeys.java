@@ -58,6 +58,8 @@ public final class MessageKeys {
     public static final String UPDATE_CANCEL_DOWNLOAD = "update.cancel_download";
     public static final String UPDATE_DOWNLOAD_CANCELLED = "update.download_cancelled";
     public static final String UPDATE_DOWNLOAD_FAILED = "update.download_failed";
+    public static final String UPDATE_DOWNLOAD_IN_PROGRESS = "update.download_in_progress";
+    public static final String UPDATE_INSTALL_FAILED = "update.install_failed";
     public static final String UPDATE_NO_INSTALLER_FOUND = "update.no_installer_found";
     public static final String UPDATE_WHATS_NEW = "update.whats_new";
     public static final String UPDATE_SAVE_TIP = "update.save_tip";
@@ -433,6 +435,7 @@ public final class MessageKeys {
     public static final String NETWORK_LOG_MESSAGE_PROXY_FALLBACK = "network_log.message.proxy_fallback";
     public static final String NETWORK_LOG_MESSAGE_JVM_SOCKS_ACTIVE = "network_log.message.jvm_socks_active";
     public static final String NETWORK_LOG_MESSAGE_CONNECTION_REUSED = "network_log.message.connection_reused";
+    public static final String NETWORK_LOG_MESSAGE_ROUTE_INTERCEPTED = "network_log.message.route_intercepted";
     public static final String NETWORK_LOG_MESSAGE_HEADER_SNAPSHOT = "network_log.message.header_snapshot";
     public static final String NETWORK_LOG_MESSAGE_HEADER_SNAPSHOT_HTTP2 = "network_log.message.header_snapshot_http2";
     public static final String NETWORK_LOG_MESSAGE_REQUEST_BODY_PREVIEW_UNAVAILABLE = "network_log.message.request_body_preview_unavailable";
@@ -527,6 +530,8 @@ public final class MessageKeys {
     public static final String SHORTCUT_PRESS_KEY = "shortcut.press_key";
     public static final String SHORTCUT_CONFLICT = "shortcut.conflict";
     public static final String SHORTCUT_NOT_SET = "shortcut.not_set";
+    public static final String SHORTCUT_UNASSIGNED = "shortcut.unassigned";
+    public static final String SHORTCUT_CLEAR_TOOLTIP = "shortcut.clear_tooltip";
     public static final String SHORTCUT_RESET_CONFIRM = "shortcut.reset_confirm";
     public static final String SHORTCUT_RESET_SUCCESS = "shortcut.reset_success";
     public static final String EXIT_APP = "exit.app";
@@ -560,6 +565,8 @@ public final class MessageKeys {
     public static final String SSE_STREAM_CONNECTED = "sse.stream.connected";
     public static final String SSE_STREAM_CLOSED = "sse.stream.closed";
     public static final String SSE_STREAM_FAILED = "sse.stream.failed";
+    public static final String TAB_SSE_EVENT_STREAM = "tab.sse_event_stream";
+    public static final String TAB_WEBSOCKET_MESSAGES = "tab.websocket_messages";
     public static final String WEBSOCKET_STREAM_CONNECTED = "websocket.stream.connected";
     public static final String WEBSOCKET_STREAM_CLOSED = "websocket.stream.closed";
     public static final String STREAM_USER_CANCELED = "stream.user_canceled";
@@ -702,6 +709,36 @@ public final class MessageKeys {
     public static final String WORKSPACE_PATH_OPEN_TOOLTIP = "workspace.path.open.tooltip";
     public static final String WORKSPACE_PATH_NOT_EXIST = "workspace.path.not.exist";
     public static final String WORKSPACE_SELECT_PATH = "workspace.select.path";
+    public static final String WORKSPACE_ACTION_NEW = "workspace.action.new";
+    public static final String WORKSPACE_ACTION_OPEN_FOLDER = "workspace.action.open_folder";
+    public static final String WORKSPACE_ACTION_CLONE = "workspace.action.clone";
+    public static final String WORKSPACE_OPEN_FOLDER_REPO_ROOT_PROMPT = "workspace.open_folder.repo_root_prompt";
+    public static final String WORKSPACE_OPEN_FOLDER_USE_SUBDIRECTORY = "workspace.open_folder.use_subdirectory";
+    public static final String WORKSPACE_OPEN_FOLDER_USE_SELECTED = "workspace.open_folder.use_selected";
+    public static final String WORKSPACE_OPEN_FOLDER_EXISTS = "workspace.open_folder.exists";
+    public static final String WORKSPACE_OPEN_FOLDER_FAILED = "workspace.open_folder.failed";
+    public static final String WORKSPACE_PATH_IN_REPOSITORY = "workspace.path.in_repository";
+    public static final String WORKSPACE_PATH_HAS_DATA = "workspace.path.has_data";
+    public static final String WORKSPACE_RELOAD_FROM_DISK = "workspace.reload_from_disk";
+    public static final String WORKSPACE_RELOAD_FROM_DISK_DONE = "workspace.reload_from_disk.done";
+    public static final String WORKSPACE_EXTERNAL_CHANGE_TITLE = "workspace.external_change.title";
+    public static final String WORKSPACE_EXTERNAL_CHANGE_CONFIRM = "workspace.external_change.confirm";
+    public static final String WORKSPACE_EXTERNAL_CHANGE_LATER = "workspace.external_change.later";
+    public static final String WORKSPACE_EXTERNAL_CHANGE_DISCARD_UNSAVED = "workspace.external_change.discard_unsaved";
+    public static final String WORKSPACE_EXTERNAL_CHANGE_STOP_MOCK = "workspace.external_change.stop_mock";
+    public static final String WORKSPACE_EXTERNAL_CHANGE_STOP_PERFORMANCE = "workspace.external_change.stop_performance";
+    public static final String WORKSPACE_EXTERNAL_CHANGE_RELOADED = "workspace.external_change.reloaded";
+    public static final String WORKSPACE_EXTERNAL_CHANGE_POSTPONED = "workspace.external_change.postponed";
+    public static final String WORKSPACE_EXTERNAL_CHANGE_UNREADABLE = "workspace.external_change.unreadable";
+    public static final String WORKSPACE_CREATE_DATA_TITLE = "workspace.create_data.title";
+    public static final String WORKSPACE_CREATE_DATA_CONFIRM = "workspace.create_data.confirm";
+    public static final String WORKSPACE_CREATE_DATA_IN_REPO_CONFIRM = "workspace.create_data.in_repo_confirm";
+    public static final String WORKSPACE_INIT_GIT = "workspace.init_git";
+    public static final String WORKSPACE_INIT_GIT_IN_REPO = "workspace.init_git.in_repo";
+    public static final String GIT_REPO_WIDE_OPERATION_TITLE = "git.repo_wide_operation.title";
+    public static final String GIT_REPO_WIDE_OPERATION_CONFIRM = "git.repo_wide_operation.confirm";
+    public static final String GIT_SCOPED_OUTSIDE_CONFLICTS = "git.scoped.outside_conflicts";
+    public static final String GIT_SCOPED_PULL_OUTSIDE_OVERLAP = "git.scoped.pull_outside_overlap";
     public static final String WORKSPACE_GIT_URL = "workspace.git.url";
     public static final String WORKSPACE_GIT_USERNAME = "workspace.git.username";
     public static final String WORKSPACE_GIT_PASSWORD = "workspace.git.password";
@@ -789,6 +826,10 @@ public final class MessageKeys {
     public static final String GIT_DIFF_SIZE_STAGED = "git.diff.size.staged";
     public static final String GIT_DIFF_SIZE_WORKTREE = "git.diff.size.worktree";
     public static final String GIT_WORKSPACE_REPOSITORY_MISSING = "git.workspace.repository_missing";
+    public static final String GIT_WORKSPACE_ALREADY_IN_REPOSITORY = "git.workspace.already_in_repository";
+    public static final String GIT_WORKSPACE_EMBEDDED_HINT = "git.workspace.embedded_hint";
+    public static final String GIT_WORKSPACE_EXISTING_REPOSITORY_HINT = "git.workspace.existing_repository_hint";
+    public static final String GIT_OPERATION_REQUIRES_DEDICATED_REPOSITORY = "git.operation.requires_dedicated_repository";
 
     // Git Branch Dialog
     public static final String GIT_BRANCH_TITLE = "git.branch.title";
@@ -901,6 +942,7 @@ public final class MessageKeys {
     public static final String PERFORMANCE_RESULT_DETAIL_COMPACT_WARNING_MSG = "performance.result.detail.compact.warning.msg";
     public static final String PERFORMANCE_RESULT_DETAIL_COMPACT_DISABLE_WARNING = "performance.result.detail.compact.disable.warning";
     public static final String PERFORMANCE_RUN_STATUS_DYNAMIC = "performance.run_status.dynamic";
+    public static final String PERFORMANCE_RUN_STATUS_DRAINING = "performance.run_status.draining";
     public static final String PERFORMANCE_REPORT_REFRESH_MODE = "performance.report.refresh_mode";
     public static final String PERFORMANCE_REPORT_REFRESH_END = "performance.report.refresh.end";
     public static final String PERFORMANCE_REPORT_REFRESH_REALTIME = "performance.report.refresh.realtime";
@@ -952,6 +994,7 @@ public final class MessageKeys {
     public static final String PERFORMANCE_MENU_ADD_REQUEST = "performance.menu.add_request";
     public static final String PERFORMANCE_MENU_ADD_SSE_CONNECT = "performance.menu.add_sse_connect";
     public static final String PERFORMANCE_MENU_ADD_SSE_READ = "performance.menu.add_sse_read";
+    public static final String PERFORMANCE_MENU_TOGGLE_SSE_MODE = "performance.menu.sse_workload_mode";
     public static final String PERFORMANCE_MENU_ADD_WS_CONNECT = "performance.menu.add_ws_connect";
     public static final String PERFORMANCE_MENU_ADD_WS_SEND = "performance.menu.add_ws_send";
     public static final String PERFORMANCE_MENU_ADD_WS_READ = "performance.menu.add_ws_read";
@@ -1067,7 +1110,9 @@ public final class MessageKeys {
     public static final String PERFORMANCE_MSG_SELECT_THREAD_GROUP = "performance.msg.select_thread_group";
     public static final String PERFORMANCE_NODE_NAME_EMPTY = "performance.node.name.empty";
     public static final String PERFORMANCE_MSG_EXECUTION_INTERRUPTED = "performance.msg.execution_interrupted";
+    public static final String PERFORMANCE_MSG_ITERATION_FAILED_CONTINUING = "performance.msg.iteration_failed_continuing";
     public static final String PERFORMANCE_MSG_EXECUTION_COMPLETED = "performance.msg.execution_completed";
+    public static final String PERFORMANCE_RESULT_CANCELLED = "performance.result.cancelled";
     public static final String PERFORMANCE_MSG_PRE_SCRIPT_FAILED = "performance.msg.pre_script_failed";
     public static final String PERFORMANCE_MSG_REQUEST_FAILED = "performance.msg.request_failed";
     public static final String PERFORMANCE_MSG_REQUEST_DATA_MISSING = "performance.msg.request_data_missing";
@@ -1227,6 +1272,7 @@ public final class MessageKeys {
     public static final String PERFORMANCE_TREND_LATENCY_DURATION_MS = "performance.trend.latency_duration_ms";
     public static final String PERFORMANCE_TREND_SESSION_DURATION_MS = "performance.trend.session_duration_ms";
     public static final String PERFORMANCE_TREND_STREAM_DURATION_MS = "performance.trend.stream_duration_ms";
+    public static final String PERFORMANCE_TREND_MAX_RESPONSE_TIME_MS = "performance.trend.max_response_time_ms";
 
     // ============ 性能结果树相关 ============
     public static final String PERFORMANCE_RESULT_TREE_COLUMN_PROTOCOL = "performance.result_tree.column.protocol";
@@ -1234,7 +1280,15 @@ public final class MessageKeys {
     public static final String PERFORMANCE_RESULT_TREE_COLUMN_STATUS = "performance.result_tree.column.status";
     public static final String PERFORMANCE_RESULT_TREE_COLUMN_COST = "performance.result_tree.column.cost";
     public static final String PERFORMANCE_RESULT_TREE_COLUMN_ASSERTION = "performance.result_tree.column.assertion";
+    public static final String PERFORMANCE_RESULT_TREE_COLUMN_START_TIME = "performance.result_tree.column.start_time";
+    public static final String PERFORMANCE_RESULT_TREE_COLUMN_LATENCY = "performance.result_tree.column.latency";
+    public static final String PERFORMANCE_RESULT_TREE_COLUMN_CONNECT = "performance.result_tree.column.connect";
     public static final String PERFORMANCE_RESULT_TREE_SEARCH_PLACEHOLDER = "performance.result_tree.search_placeholder";
+    public static final String PERFORMANCE_RESULT_TREE_FAILED_ONLY = "performance.result_tree.failed_only";
+    public static final String PERFORMANCE_RESULT_TREE_ROW_COUNT_TOTAL = "performance.result_tree.row_count.total";
+    public static final String PERFORMANCE_RESULT_TREE_ROW_COUNT_FILTERED = "performance.result_tree.row_count.filtered";
+    public static final String PERFORMANCE_RESULT_TREE_DETAIL_CLOSE = "performance.result_tree.detail.close";
+    public static final String PERFORMANCE_RESULT_TREE_DETAIL_SUMMARY = "performance.result_tree.detail.summary";
 
     // ============ 历史记录相关 ============
     public static final String HISTORY_EMPTY_BODY = "history.empty_body";
@@ -1756,6 +1810,29 @@ public final class MessageKeys {
     public static final String RESPONSE_MEDIA_SYSTEM_UNAVAILABLE = "response.media.system_unavailable";
     public static final String RESPONSE_MEDIA_FILE_UNAVAILABLE = "response.media.file_unavailable";
     public static final String RESPONSE_MEDIA_FILE_SUMMARY = "response.media.file_summary";
+    public static final String RESPONSE_FILE_GENERIC_TYPE = "response.file.generic_type";
+    public static final String RESPONSE_FILE_SUMMARY = "response.file.summary";
+    public static final String RESPONSE_FILE_MIME_MISMATCH = "response.file.mime_mismatch";
+    public static final String RESPONSE_FILE_MIME_MISSING = "response.file.mime_missing";
+    public static final String RESPONSE_FILE_MIME_MISMATCH_TOOLTIP = "response.file.mime_mismatch.tooltip";
+    public static final String RESPONSE_FILE_CONTENT_TYPE_MISSING = "response.file.content_type_missing";
+    public static final String RESPONSE_FILE_VIEW_AS_TEXT = "response.file.view_as_text";
+    public static final String RESPONSE_FILE_BACK_TO_OVERVIEW = "response.file.back_to_overview";
+    public static final String RESPONSE_FILE_TEXT_PREVIEW_BADGE = "response.file.text_preview_badge";
+    public static final String RESPONSE_FILE_SAVED_TO = "response.file.saved_to";
+    public static final String RESPONSE_FILE_SAVE_FAILED = "response.file.save_failed";
+    public static final String RESPONSE_FILE_SAVE_DIALOG_TITLE = "response.file.save_dialog_title";
+    public static final String RESPONSE_FILE_OPEN = "response.file.open";
+    public static final String RESPONSE_FILE_OPEN_FAILED = "response.file.open_failed";
+    public static final String RESPONSE_FILE_CONTENT_NOT_SAVED = "response.file.content_not_saved";
+    public static final String RESPONSE_FILE_TEXT_PREVIEW_NOTICE = "response.file.text_preview_notice";
+    public static final String RESPONSE_FILE_SECTION_TITLE = "response.file.section_title";
+    public static final String RESPONSE_FILE_LABEL_NAME = "response.file.label.name";
+    public static final String RESPONSE_FILE_LABEL_TYPE = "response.file.label.type";
+    public static final String RESPONSE_FILE_LABEL_SIZE = "response.file.label.size";
+    public static final String RESPONSE_FILE_CONTENT_NOT_KEPT = "response.file.content_not_kept";
+    public static final String MOCK_EXAMPLE_FILE_CONTENT_UNAVAILABLE = "mock.example.file_content_unavailable";
+    public static final String RESPONSE_FILE_BODY_HIDDEN = "response.file.body_hidden";
     public static final String HTTP_EVENT_ROUTE_ATTEMPTS = "http.event.route_attempts";
     public static final String HTTP_EVENT_ROUTE_FAMILY = "http.event.route.family";
     public static final String HTTP_EVENT_ROUTE_ADDRESS = "http.event.route.address";
@@ -1770,6 +1847,7 @@ public final class MessageKeys {
     public static final String HTTP_EVENT_RETRIES = "http.event.retries";
     public static final String HTTP_EVENT_FOLLOW_UPS = "http.event.follow_ups";
     public static final String HTTP_EVENT_DECISIONS = "http.event.decisions";
+    public static final String HTTP_EVENT_RECOVERED_ERROR = "http.event.recovered_error";
 
     // ============ CSV Data Panel related ============
     public static final String CSV_STATUS_NO_DATA = "csv.status.no_data";
@@ -1874,6 +1952,8 @@ public final class MessageKeys {
     public static final String RESPONSE_INCOMPLETE = "response.incomplete";
     public static final String RESPONSE_BODY_SKIPPED_PERFORMANCE = "response.body.skipped.performance";
     public static final String RESPONSE_BODY_TRUNCATED_PERFORMANCE = "response.body.truncated.performance";
+    public static final String PERFORMANCE_MSG_RESPONSE_BODY_TOO_LARGE_TO_EVALUATE =
+            "performance.msg.response_body_too_large_to_evaluate";
 
     // ============ ResponseAssertion 国际化 ============
     public static final String RESPONSE_ASSERTION_STATUS_FAILED = "response.assertion.status_failed";
@@ -2541,6 +2621,9 @@ public final class MessageKeys {
     public static final String SETTINGS_PROXY_SYSTEM_AUTH_HINT = "settings.proxy.system_auth_hint";
     public static final String SETTINGS_PROXY_AUTH_SECTION_TITLE = "settings.proxy.auth_section.title";
     public static final String SETTINGS_PROXY_AUTH_SECTION_DESCRIPTION = "settings.proxy.auth_section.description";
+    public static final String SETTINGS_PROXY_AUTH_CHECKBOX = "settings.proxy.auth.checkbox";
+    public static final String SETTINGS_PROXY_AUTH_TOOLTIP = "settings.proxy.auth.tooltip";
+    public static final String SETTINGS_PROXY_AUTH_REQUIRED = "settings.proxy.auth.required";
     public static final String SETTINGS_PROXY_ADVANCED_SECTION_TITLE = "settings.proxy.advanced_section.title";
     public static final String SETTINGS_PROXY_ADVANCED_SECTION_DESCRIPTION = "settings.proxy.advanced_section.description";
     public static final String SETTINGS_PROXY_SSL_VERIFICATION_TOOLTIP = "settings.proxy.ssl.verification.tooltip";
@@ -2555,6 +2638,14 @@ public final class MessageKeys {
     public static final String SETTINGS_PROXY_STATUS_SYSTEM_ACTIVE = "settings.proxy.status.system.active";
     public static final String SETTINGS_PROXY_STATUS_DIRECT = "settings.proxy.status.direct";
     public static final String SETTINGS_PROXY_STATUS_UNAVAILABLE = "settings.proxy.status.unavailable";
+    public static final String SETTINGS_PROXY_CHECK_BUTTON = "settings.proxy.check.button";
+    public static final String SETTINGS_PROXY_CHECK_TOOLTIP = "settings.proxy.check.tooltip";
+    public static final String SETTINGS_PROXY_CHECK_RUNNING = "settings.proxy.check.running";
+    public static final String SETTINGS_PROXY_CHECK_SUCCESS = "settings.proxy.check.success";
+    public static final String SETTINGS_PROXY_CHECK_AUTH_FAILED = "settings.proxy.check.auth_failed";
+    public static final String SETTINGS_PROXY_CHECK_FAILED = "settings.proxy.check.failed";
+    public static final String SETTINGS_PROXY_CHECK_ROUTE_PROXY = "settings.proxy.check.route.proxy";
+    public static final String SETTINGS_PROXY_CHECK_ROUTE_DIRECT = "settings.proxy.check.route.direct";
     public static final String NETWORK_ERROR_PROXY_SOCKS_MALFORMED = "network.error.proxy.socks.malformed";
     public static final String NETWORK_ERROR_UNKNOWN_HOST = "network.error.unknown_host";
 
@@ -2941,6 +3032,19 @@ public final class MessageKeys {
     public static final String TOOLBOX_ES_TAB_AGG = "toolbox.es.tab.agg";
     public static final String TOOLBOX_ES_INDEX_COPY_NAME = "toolbox.es.index.copy_name";
     public static final String TOOLBOX_ES_INDEX_VIEW_ALIASES = "toolbox.es.index.view_aliases";
+    public static final String TOOLBOX_ES_CONNECT_TOOLTIP = "toolbox.es.connect.tooltip";
+    public static final String TOOLBOX_ES_STATUS_CONNECTING = "toolbox.es.status.connecting";
+    public static final String TOOLBOX_ES_TEST_CONNECTION = "toolbox.es.test_connection";
+    public static final String TOOLBOX_ES_TEST_CONNECTION_TOOLTIP = "toolbox.es.test_connection.tooltip";
+    public static final String TOOLBOX_ES_TEST_CONNECTION_RUNNING = "toolbox.es.test_connection.running";
+    public static final String TOOLBOX_ES_TEST_CONNECTION_SUCCESS = "toolbox.es.test_connection.success";
+    public static final String TOOLBOX_ES_TEST_CONNECTION_FAILED = "toolbox.es.test_connection.failed";
+    public static final String TOOLBOX_ES_INDEX_EMPTY_NOT_CONNECTED = "toolbox.es.index.empty.not_connected";
+    public static final String TOOLBOX_ES_INDEX_EMPTY_LOADING = "toolbox.es.index.empty.loading";
+    public static final String TOOLBOX_ES_INDEX_EMPTY_NO_MATCH = "toolbox.es.index.empty.no_match";
+    public static final String TOOLBOX_ES_INDEX_NAME_COPIED = "toolbox.es.index.name_copied";
+    public static final String TOOLBOX_ES_INDEX_TOOLTIP = "toolbox.es.index.tooltip";
+    public static final String TOOLBOX_ES_INDEX_LIST_HINT = "toolbox.es.index.list.hint";
 
     // ============ InfluxDB 工具相关 ============
     public static final String TOOLBOX_INFLUXDB = "toolbox.influxdb";
@@ -3039,6 +3143,20 @@ public final class MessageKeys {
     public static final String TOOLBOX_INFLUX_ERR_QUERY_REQUIRED = "toolbox.influx.err.query_required";
     public static final String TOOLBOX_INFLUX_ERR_NOT_CONNECTED = "toolbox.influx.err.not_connected";
     public static final String TOOLBOX_INFLUX_ERR_CONNECT_FAILED = "toolbox.influx.err.connect_failed";
+    public static final String TOOLBOX_INFLUX_CONNECT_TOOLTIP = "toolbox.influx.connect.tooltip";
+    public static final String TOOLBOX_INFLUX_STATUS_CONNECTING = "toolbox.influx.status.connecting";
+    public static final String TOOLBOX_INFLUX_TEST_CONNECTION = "toolbox.influx.test_connection";
+    public static final String TOOLBOX_INFLUX_TEST_CONNECTION_TOOLTIP = "toolbox.influx.test_connection.tooltip";
+    public static final String TOOLBOX_INFLUX_TEST_CONNECTION_RUNNING = "toolbox.influx.test_connection.running";
+    public static final String TOOLBOX_INFLUX_TEST_CONNECTION_SUCCESS = "toolbox.influx.test_connection.success";
+    public static final String TOOLBOX_INFLUX_TEST_CONNECTION_FAILED = "toolbox.influx.test_connection.failed";
+    public static final String TOOLBOX_INFLUX_MEASUREMENT_EMPTY_NOT_CONNECTED = "toolbox.influx.measurement.empty.not_connected";
+    public static final String TOOLBOX_INFLUX_MEASUREMENT_EMPTY_V2 = "toolbox.influx.measurement.empty.v2";
+    public static final String TOOLBOX_INFLUX_MEASUREMENT_EMPTY_NO_DB = "toolbox.influx.measurement.empty.no_db";
+    public static final String TOOLBOX_INFLUX_MEASUREMENT_EMPTY_LOADING = "toolbox.influx.measurement.empty.loading";
+    public static final String TOOLBOX_INFLUX_MEASUREMENT_EMPTY_NONE = "toolbox.influx.measurement.empty.none";
+    public static final String TOOLBOX_INFLUX_MEASUREMENT_EMPTY_NO_MATCH = "toolbox.influx.measurement.empty.no_match";
+    public static final String TOOLBOX_INFLUX_MEASUREMENT_LIST_HINT = "toolbox.influx.measurement.list.hint";
 
     public static final String TOOLBOX_CRON = "toolbox.cron";
     public static final String TOOLBOX_CRON_EXPRESSION = "toolbox.cron.expression";

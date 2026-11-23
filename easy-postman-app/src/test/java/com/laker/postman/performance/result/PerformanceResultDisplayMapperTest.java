@@ -64,9 +64,75 @@ public class PerformanceResultDisplayMapperTest {
         assertNull(request.bodyType);
         assertNull(request.headersList);
         assertNull(response.filePath);
-        assertNull(response.fileName);
+        assertEquals(response.fileName, "result.bin", "文件名用于详情页展示文件信息");
         assertNull(response.httpEventInfo);
         assertEquals(resultNodeInfo.costMs, 123);
+    }
+
+    @Test
+    public void shouldKeepJmeterStyleTimingAfterDroppingEventInfo() {
+        PreparedRequest request = new PreparedRequest();
+        request.collectEventInfo = false;
+
+        HttpEventInfo eventInfo = new HttpEventInfo();
+        eventInfo.setQueueStart(10_000L);
+        eventInfo.setCallStart(10_005L);
+        eventInfo.setRequestHeadersStart(30_000L);
+        eventInfo.setResponseHeadersStart(30_450L);
+        HttpResponse response = new HttpResponse();
+        response.code = 200;
+        response.costMs = 20_500L;
+        response.httpEventInfo = eventInfo;
+
+        PerformanceRequestExecutionResult executionResult = new PerformanceRequestExecutionResult(
+                "api-1", "slow", request, response, null, null, false, false, false, 9_000L, 0L);
+
+        ResultNodeInfo info = PerformanceResultDisplayMapper.toDisplayNodeInfo(
+                PerformanceSampleResult.fromExecutionResult(executionResult), true);
+
+        assertNull(response.httpEventInfo);
+        assertEquals(info.timing.startTimeMs(), 10_000L);
+        assertEquals(info.timing.connectMs(), 20_000L);
+        assertEquals(info.timing.latencyMs(), 20_450L);
+    }
+
+    @Test
+    public void shouldClampLatencyToDurationWhenClocksRoundDifferently() {
+        PreparedRequest request = new PreparedRequest();
+        HttpEventInfo eventInfo = new HttpEventInfo();
+        eventInfo.setQueueStart(10_000L);
+        eventInfo.setRequestHeadersStart(45_313L);
+        eventInfo.setResponseHeadersStart(45_566L);
+        HttpResponse response = new HttpResponse();
+        response.code = 200;
+        response.costMs = 35_565L;
+        response.httpEventInfo = eventInfo;
+
+        PerformanceRequestExecutionResult executionResult = new PerformanceRequestExecutionResult(
+                "api-1", "slow", request, response, null, null, false, false, false, 10_000L, 0L);
+        ResultNodeInfo info = PerformanceResultDisplayMapper.toDisplayNodeInfo(
+                PerformanceSampleResult.fromExecutionResult(executionResult));
+
+        assertEquals(info.timing.latencyMs(), 35_565L);
+        assertEquals(info.timing.connectMs(), 35_313L);
+    }
+
+    @Test
+    public void shouldFallBackToSampleStartWhenEventTimingIsUnavailable() {
+        PreparedRequest request = new PreparedRequest();
+        HttpResponse response = new HttpResponse();
+        response.code = 200;
+        response.costMs = 50L;
+
+        PerformanceRequestExecutionResult executionResult = new PerformanceRequestExecutionResult(
+                "api-1", "fast", request, response, null, null, false, false, false, 9_000L, 0L);
+
+        ResultNodeInfo info = PerformanceResultDisplayMapper.toDisplayNodeInfo(
+                PerformanceSampleResult.fromExecutionResult(executionResult));
+
+        assertEquals(info.timing.latencyMs(), -1L);
+        assertEquals(info.timing.connectMs(), -1L);
+        assertTrue(info.timing.startTimeMs() > 0);
     }
 
     @Test
@@ -259,7 +325,9 @@ public class PerformanceResultDisplayMapperTest {
                 true
         );
 
-        assertFalse(resultNodeInfo.isActuallySuccessful());
+        assertTrue(resultNodeInfo.cancelled);
+        assertFalse(resultNodeInfo.executionFailed, "取消与执行失败分开展示");
+        assertFalse(resultNodeInfo.isActuallySuccessful(), "已握手 101 的取消采样也不算成功");
         assertEquals(resultNodeInfo.errorMsg, "Execution interrupted");
         assertTrue(resultNodeInfo.resp.body.contains("Error: Execution interrupted"));
         assertTrue(resultNodeInfo.resp.body.contains("Sent: 120"));

@@ -107,7 +107,7 @@ public class PluginRuntimeTest {
     }
 
     @Test
-    public void shouldRejectPreviousPluginPlatformAfterSharedUiBreakingChange() {
+    public void shouldRejectPreviousPluginPlatform() {
         PluginDescriptor descriptor = new PluginDescriptor(
                 "plugin-client-cert",
                 "Client Certificate Plugin",
@@ -333,6 +333,21 @@ public class PluginRuntimeTest {
         assertTrue(PluginRuntime.getInstalledPlugins().stream()
                 .anyMatch(info -> "plugin-disabled".equals(info.descriptor().id())
                         && !info.enabled()
+                        && !info.loaded()));
+    }
+
+    @Test
+    public void shouldRejectPreviousPlatformPluginBeforeLoadingItsCode() throws Exception {
+        Path pluginJar = PluginRuntime.getManagedPluginDir().resolve("plugin-old-platform-1.0.0.jar");
+        writePluginJar(pluginJar, "plugin-old-platform", "1.0.0", "com.example.TestRuntimePlugin",
+                "", "", "3.0.0", "3.0.0");
+
+        PluginRuntime.initialize();
+
+        assertEquals(TestRuntimePlugin.getLoadCount(), 0);
+        assertTrue(PluginRuntime.getInstalledPlugins().stream()
+                .anyMatch(info -> "plugin-old-platform".equals(info.descriptor().id())
+                        && !info.compatible()
                         && !info.loaded()));
     }
 

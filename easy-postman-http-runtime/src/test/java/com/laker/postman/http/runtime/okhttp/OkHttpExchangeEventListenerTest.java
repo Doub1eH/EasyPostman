@@ -6,6 +6,7 @@ import com.laker.postman.http.runtime.model.PreparedRequest;
 import com.laker.postman.http.runtime.observation.NetworkLogEvent;
 import com.laker.postman.http.runtime.observation.NetworkLogEventStage;
 import com.laker.postman.http.runtime.transport.HttpExchangeTraceSupport;
+import okhttp3.Address;
 import okhttp3.Connection;
 import okhttp3.CipherSuite;
 import okhttp3.Handshake;
@@ -27,6 +28,7 @@ import java.util.List;
 
 import static org.testng.Assert.assertEquals;
 import static org.testng.Assert.assertFalse;
+import static org.testng.Assert.assertNull;
 import static org.testng.Assert.assertTrue;
 
 public class OkHttpExchangeEventListenerTest {
@@ -101,6 +103,105 @@ public class OkHttpExchangeEventListenerTest {
         assertTrue(events.stream().anyMatch(event -> event.stage()
                 == NetworkLogEventStage.CALL_FAILED
                 && event.message().contains("<invalid-host>")));
+    }
+
+    @DataProvider
+    public Object[][] interceptionCases() {
+        return new Object[][]{
+                {Proxy.NO_PROXY, new byte[]{127, 0, 0, 1}, new byte[]{10, (byte) 175, (byte) 180, 2}, true},
+                {Proxy.NO_PROXY, new byte[]{10, (byte) 175, (byte) 167, (byte) 167},
+                        new byte[]{10, (byte) 175, (byte) 180, 2}, false},
+                {Proxy.NO_PROXY, new byte[]{127, 0, 0, 1}, new byte[]{127, 0, 0, 1}, false},
+                // Loopback local address with a non-loopback remote: only DIRECT routes are suspicious.
+                {new Proxy(Proxy.Type.HTTP, new InetSocketAddress("127.0.0.1", 7890)),
+                        new byte[]{127, 0, 0, 1}, new byte[]{10, (byte) 175, (byte) 180, 2}, false},
+                {new Proxy(Proxy.Type.SOCKS, new InetSocketAddress("127.0.0.1", 7891)),
+                        new byte[]{127, 0, 0, 1}, new byte[]{10, (byte) 175, (byte) 180, 2}, false},
+        };
+    }
+
+    @Test(dataProvider = "interceptionCases")
+    public void directRouteWithLoopbackLocalAddressShouldWarnAboutInterception(
+            Proxy proxy, byte[] local, byte[] remote, boolean expectWarning) throws Exception {
+        PreparedRequest request = new PreparedRequest();
+        request.captureProfile = HttpCaptureProfile.COLLECTION_DIAGNOSTIC;
+        List<NetworkLogEvent> events = new ArrayList<>();
+        request.networkLogSink = events::add;
+        OkHttpExchangeEventListener listener = new OkHttpExchangeEventListener(request);
+        InetAddress localAddress = InetAddress.getByAddress(local);
+        InetAddress remoteAddress = InetAddress.getByAddress(remote);
+        Route route = new Route(new Address("internal.example", 80, okhttp3.Dns.SYSTEM,
+                javax.net.SocketFactory.getDefault(), null, null, null, okhttp3.Authenticator.NONE,
+                proxy, List.of(Protocol.HTTP_1_1), List.of(okhttp3.ConnectionSpec.CLEARTEXT),
+                java.net.ProxySelector.getDefault()), proxy, new InetSocketAddress(remoteAddress, 80));
+
+        try (Socket socket = new Socket() {
+            @Override
+            public InetAddress getLocalAddress() {
+                return localAddress;
+            }
+
+            @Override
+            public InetAddress getInetAddress() {
+                return remoteAddress;
+            }
+        }) {
+            Connection connection = fixedConnection(route, socket);
+            assertEquals(OkHttpExchangeEventListener.isInterceptedDirectRoute(connection), expectWarning);
+            listener.connectionAcquired(null, connection);
+        }
+
+        List<NetworkLogEvent> warnings = events.stream()
+                .filter(event -> event.stage() == NetworkLogEventStage.ROUTE_INTERCEPTED)
+                .toList();
+        assertEquals(warnings.size(), expectWarning ? 1 : 0);
+        if (expectWarning) {
+            assertTrue(warnings.get(0).message().startsWith("Direct route intercepted: local=127.0.0.1:"),
+                    warnings.get(0).message());
+            assertTrue(warnings.get(0).message().contains("remote=10.175.180.2:"), warnings.get(0).message());
+        }
+    }
+
+    @Test
+    public void interceptionApplicationLogWarningShouldBeRateLimited() {
+        OkHttpExchangeEventListener.lastInterceptionWarningNanos.set(0L);
+        try {
+            assertTrue(OkHttpExchangeEventListener.warnInterceptedDirectRoute("127.0.0.1:1", "10.0.0.1:80"));
+            assertFalse(OkHttpExchangeEventListener.warnInterceptedDirectRoute("127.0.0.1:2", "10.0.0.2:80"));
+        } finally {
+            OkHttpExchangeEventListener.lastInterceptionWarningNanos.set(0L);
+        }
+    }
+
+    @Test
+    public void interceptionCheckShouldTolerateMissingRoute() throws Exception {
+        try (Socket socket = new Socket()) {
+            assertFalse(OkHttpExchangeEventListener.isInterceptedDirectRoute(fixedConnection(null, socket)));
+        }
+    }
+
+    private static Connection fixedConnection(Route route, Socket socket) {
+        return new Connection() {
+            @Override
+            public Route route() {
+                return route;
+            }
+
+            @Override
+            public Socket socket() {
+                return socket;
+            }
+
+            @Override
+            public Handshake handshake() {
+                return null;
+            }
+
+            @Override
+            public Protocol protocol() {
+                return Protocol.HTTP_1_1;
+            }
+        };
     }
 
     @Test
@@ -394,5 +495,38 @@ public class OkHttpExchangeEventListenerTest {
         assertEquals(info.getFollowUpCount(), 1);
         assertTrue(info.getDispatcherQueueStart() > 0);
         assertTrue(info.getDispatcherQueueEnd() > 0);
+    }
+
+    @Test
+    public void shouldDowngradeRetriedFailureToRecoveredError() {
+        PreparedRequest preparedRequest = new PreparedRequest();
+        preparedRequest.url = "http://127.0.0.1/";
+        preparedRequest.captureProfile = HttpCaptureProfile.COLLECTION_DIAGNOSTIC;
+        OkHttpExchangeEventListener listener = new OkHttpExchangeEventListener(preparedRequest);
+
+        listener.responseFailed(null, new IOException("unexpected end of stream"));
+        listener.retryDecision(null, new IOException("unexpected end of stream"), true);
+        listener.callEnd(null);
+
+        HttpEventInfo info = HttpExchangeTraceSupport.resolveFromRequest(preparedRequest);
+        assertNull(info.getErrorMessage());
+        assertNull(info.getError());
+        assertTrue(info.getRecoveredErrorMessage().contains("unexpected end of stream"));
+    }
+
+    @Test
+    public void shouldKeepErrorWhenRetryAlsoFails() {
+        PreparedRequest preparedRequest = new PreparedRequest();
+        preparedRequest.url = "http://127.0.0.1/";
+        preparedRequest.captureProfile = HttpCaptureProfile.COLLECTION_DIAGNOSTIC;
+        OkHttpExchangeEventListener listener = new OkHttpExchangeEventListener(preparedRequest);
+
+        listener.responseFailed(null, new IOException("unexpected end of stream"));
+        listener.retryDecision(null, new IOException("unexpected end of stream"), true);
+        listener.callFailed(null, new IOException("Connection refused"));
+
+        HttpEventInfo info = HttpExchangeTraceSupport.resolveFromRequest(preparedRequest);
+        assertTrue(info.getErrorMessage() != null && !info.getErrorMessage().isBlank());
+        assertTrue(info.getRecoveredErrorMessage().contains("unexpected end of stream"));
     }
 }

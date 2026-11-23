@@ -6,6 +6,7 @@ import com.laker.postman.common.constants.ModernColors;
 import com.laker.postman.model.GitOperation;
 import com.laker.postman.model.GitRepoSource;
 import com.laker.postman.model.Workspace;
+import com.laker.postman.model.RemoteStatus;
 import com.laker.postman.model.WorkspaceType;
 import com.laker.postman.util.FontsUtil;
 import com.laker.postman.util.I18nUtil;
@@ -30,7 +31,9 @@ public class WorkspaceDetailPanel extends JPanel {
             Runnable remoteConfigAction,
             Runnable historyAction,
             Runnable branchManagementAction,
-            Runnable diffAction
+            Runnable diffAction,
+            String repositoryHint,
+            RemoteStatus diskStatus
     ) {
         private boolean hasAnyAction() {
             return commitAction != null
@@ -52,7 +55,7 @@ public class WorkspaceDetailPanel extends JPanel {
     }
 
     public WorkspaceDetailPanel(Workspace workspace, Runnable branchManagementAction, Runnable diffAction) {
-        this(workspace, new GitActions(null, null, null, null, null, branchManagementAction, diffAction));
+        this(workspace, new GitActions(null, null, null, null, null, branchManagementAction, diffAction, null, null));
     }
 
     public WorkspaceDetailPanel(Workspace workspace, GitActions gitActions) {
@@ -66,7 +69,7 @@ public class WorkspaceDetailPanel extends JPanel {
         int row = 0;
         addRow(infoGrid, row++, I18nUtil.getMessage(MessageKeys.WORKSPACE_NAME) + ":", nameLabel);
         addRow(infoGrid, row++, I18nUtil.getMessage(MessageKeys.WORKSPACE_TYPE) + ":",
-                workspace.getType() == WorkspaceType.LOCAL
+                workspace.getType() != WorkspaceType.GIT && gitActions == null
                         ? I18nUtil.getMessage(MessageKeys.WORKSPACE_TYPE_LOCAL)
                         : I18nUtil.getMessage(MessageKeys.WORKSPACE_TYPE_GIT));
         addRow(infoGrid, row++, I18nUtil.getMessage(MessageKeys.WORKSPACE_PATH) + ":", new PathFieldPanel(workspace.getPath()));
@@ -78,10 +81,10 @@ public class WorkspaceDetailPanel extends JPanel {
         addSection(sectionRow++, createSection(I18nUtil.getMessage(MessageKeys.WORKSPACE_DETAIL_BASIC_INFO), infoGrid),
                 new Insets(0, 0, 0, 0));
 
-        if (workspace.getType() == WorkspaceType.GIT) {
+        if (workspace.getType() == WorkspaceType.GIT || gitActions != null) {
             addSection(sectionRow++, createSection(
                     I18nUtil.getMessage(MessageKeys.WORKSPACE_DETAIL_GIT_INFO),
-                    createGitInfoPanel(workspace),
+                    createGitInfoPanel(workspace, gitActions),
                     createGitActionPanel(gitActions)
             ), new Insets(14, 0, 0, 0));
         }
@@ -226,28 +229,37 @@ public class WorkspaceDetailPanel extends JPanel {
     // Git 信息面板
     // ──────────────────────────────────────────────────────────────────────────
 
-    private JPanel createGitInfoPanel(Workspace workspace) {
+    private JPanel createGitInfoPanel(Workspace workspace, GitActions gitActions) {
+        String repositoryHint = gitActions == null ? null : gitActions.repositoryHint();
+        RemoteStatus status = gitActions == null ? null : gitActions.diskStatus();
         JPanel panel = createDetailGrid();
         int row = 0;
 
-        addRow(panel, row++, I18nUtil.getMessage(MessageKeys.WORKSPACE_DETAIL_REPO_SOURCE) + ":",
-                workspace.getGitRepoSource() == GitRepoSource.CLONED
-                        ? I18nUtil.getMessage(MessageKeys.WORKSPACE_CLONE_FROM_REMOTE)
-                        : I18nUtil.getMessage(MessageKeys.WORKSPACE_INIT_LOCAL));
+        if (repositoryHint != null && !repositoryHint.isBlank()) {
+            JLabel hintLabel = new JLabel(repositoryHint);
+            hintLabel.setToolTipText(repositoryHint);
+            hintLabel.setMinimumSize(new Dimension(0, hintLabel.getPreferredSize().height));
+            addRow(panel, row++, I18nUtil.getMessage(MessageKeys.WORKSPACE_DETAIL_REPO_SOURCE) + ":", hintLabel);
+        } else {
+            addRow(panel, row++, I18nUtil.getMessage(MessageKeys.WORKSPACE_DETAIL_REPO_SOURCE) + ":",
+                    workspace.getGitRepoSource() == GitRepoSource.CLONED
+                            ? I18nUtil.getMessage(MessageKeys.WORKSPACE_CLONE_FROM_REMOTE)
+                            : I18nUtil.getMessage(MessageKeys.WORKSPACE_INIT_LOCAL));
+        }
 
+        // 有磁盘读数时以磁盘为准；工作区记录里的值可能过期，或对“打开的已有仓库”为空
         addRow(panel, row++, I18nUtil.getMessage(MessageKeys.WORKSPACE_DETAIL_REMOTE_REPO) + ":",
-                workspace.getGitRemoteUrl());
+                status != null ? status.remoteUrl : workspace.getGitRemoteUrl());
 
         addRow(panel, row++, I18nUtil.getMessage(MessageKeys.WORKSPACE_DETAIL_LOCAL_BRANCH) + ":",
-                workspace.getCurrentBranch());
+                status != null ? status.currentBranch : workspace.getCurrentBranch());
 
         addRow(panel, row++, I18nUtil.getMessage(MessageKeys.WORKSPACE_DETAIL_REMOTE_BRANCH) + ":",
-                workspace.getRemoteBranch());
+                status != null ? (status.upstreamBranch == null ? null : status.upstreamBranch.replaceFirst("^refs/heads/", ""))
+                        : workspace.getRemoteBranch());
 
-        String shortCommitId = workspace.getLastCommitId() == null ? "" :
-                workspace.getLastCommitId().length() > 8
-                        ? workspace.getLastCommitId().substring(0, 8)
-                        : workspace.getLastCommitId();
+        String commitId = status != null ? status.headCommitId : workspace.getLastCommitId();
+        String shortCommitId = commitId == null ? "" : commitId.substring(0, Math.min(8, commitId.length()));
         addRow(panel, row, I18nUtil.getMessage(MessageKeys.WORKSPACE_DETAIL_LAST_COMMIT) + ":",
                 shortCommitId);
 

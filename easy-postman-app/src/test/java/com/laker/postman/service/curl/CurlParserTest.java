@@ -1035,6 +1035,63 @@ public class CurlParserTest {
         assertNull(result.body, "当使用 urlencoded 时，body 应该为 null");
     }
 
+    @Test(description = "Copy as cURL form data: + is a space, %2B is a plus")
+    public void testDataRawFormPlusIsSpace() {
+        String curl = "curl 'https://example.com/search' " +
+                "-H 'Content-Type: application/x-www-form-urlencoded' " +
+                "--data-raw 'q=hello+world&tag=a%2Bb'";
+        CurlRequest result = CurlParser.parse(curl);
+
+        assertEquals(findUrlencodedValue(result.urlencodedList, "q"), "hello world");
+        assertEquals(findUrlencodedValue(result.urlencodedList, "tag"), "a+b");
+    }
+
+    @Test(description = "-G keeps + in the query as curl sends it")
+    public void testForceGetKeepsPlusInQuery() {
+        String curl = "curl -G 'https://example.com/search' -d 'q=a+b'";
+        CurlRequest result = CurlParser.parse(curl);
+
+        assertEquals(findParamValue(result.paramsList, "q"), "a+b");
+        assertEquals(HttpUrlUtil.buildEncodedUrl(result.url, result.paramsList),
+                "https://example.com/search?q=a+b");
+    }
+
+    @Test(description = "^ in single-quoted bash bodies is literal")
+    public void testBashBodyKeepsCaret() {
+        String curl = "curl 'https://example.com/api' -H 'Content-Type: application/json' " +
+                "--data-raw '{\"pattern\":\"^[A-Z]{3}$\",\"re\":\"a^\"}'";
+        CurlRequest result = CurlParser.parse(curl);
+
+        assertEquals(result.body, "{\"pattern\":\"^[A-Z]{3}$\",\"re\":\"a^\"}");
+    }
+
+    @Test(description = "^ in a single-quoted value after = is literal")
+    public void testBashInlineQuotedValueKeepsCaret() {
+        String curl = "curl https://example.com --data-raw='value^[x]'";
+        CurlRequest result = CurlParser.parse(curl);
+
+        assertEquals(result.body, "value^[x]");
+    }
+
+    @Test(description = "an apostrophe inside double quotes keeps the CMD caret escapes")
+    public void testWindowsCmdApostropheInDoubleQuotes() {
+        String curl = "curl \"https://example.com/api?first=1^&second=2\" -H \"X-Note: 'draft'\"";
+        CurlRequest result = CurlParser.parse(curl);
+
+        assertEquals(result.url, "https://example.com/api?first=1&second=2");
+        assertEquals(findHeaderValue(result.headersList, "X-Note"), "'draft'");
+    }
+
+    @Test(description = "a lone apostrophe in an unquoted CMD argument keeps the caret escapes")
+    public void testWindowsCmdWordApostropheKeepsCaretEscapes() {
+        String curl = "curl https://example.com/o'connor?first=1^&second=2";
+        CurlRequest result = CurlParser.parse(curl);
+
+        assertFalse(result.url.contains("^"), result.url);
+        assertEquals(findParamValue(result.paramsList, "first"), "1");
+        assertEquals(findParamValue(result.paramsList, "second"), "2");
+    }
+
     @Test(description = "测试 data-urlencode 单个参数中的 & 是 value 内容")
     public void testDataUrlencodeTreatsAmpersandAsValueContentForPost() {
         String curl = "curl -XPOST 'https://example.com/search' " +
@@ -1690,7 +1747,7 @@ public class CurlParserTest {
         HttpRequestItem item = CurlImportUtil.fromCurl(curl);
 
         assertNotNull(item);
-        assertEquals(item.getProtocol(), RequestItemProtocolEnum.SSE);
+        assertEquals(item.getProtocol(), RequestItemProtocolEnum.HTTP);
         assertEquals(item.getMethod(), "POST");
         assertEquals(item.getBody(), body);
         assertEquals(findHeaderValue(item.getHeadersList(), "accept"), "text/event-stream");

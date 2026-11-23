@@ -48,7 +48,7 @@
             plugin-* 不跟随这里自动升级，而是在各自 pom.xml 里单独维护版本，
             这样后续可以按“哪个插件改了就只发哪个插件”的节奏独立发版。
          -->
-        <revision>6.2.8</revision>
+        <revision>6.3.4</revision>
         <!--
             插件平台兼容版本。
             它表达的是“插件 SPI / 运行时装配边界”，不等同于宿主 revision。
@@ -91,6 +91,7 @@
         <maven.jar.plugin.version>3.4.2</maven.jar.plugin.version>
         <maven.resources.plugin.version>3.4.0</maven.resources.plugin.version>
         <maven.shade.plugin.version>3.6.2</maven.shade.plugin.version>
+        <maven.surefire.plugin.version>3.2.5</maven.surefire.plugin.version>
     </properties>
 
     <dependencyManagement>
@@ -243,6 +244,21 @@
                     <groupId>org.apache.maven.plugins</groupId>
                     <artifactId>maven-shade-plugin</artifactId>
                     <version>${maven.shade.plugin.version}</version>
+                </plugin>
+                <plugin>
+                    <groupId>org.apache.maven.plugins</groupId>
+                    <artifactId>maven-surefire-plugin</artifactId>
+                    <version>${maven.surefire.plugin.version}</version>
+                    <configuration>
+                        <systemPropertyVariables>
+                            <!-- 未绑定日志实现的模块在测试时不输出 SLF4J NOP 提示 -->
+                            <slf4j.internal.verbosity>ERROR</slf4j.internal.verbosity>
+                            <!-- 普通 JDK 上运行 GraalJS 测试时不输出解释器模式告警 -->
+                            <polyglot.engine.WarnInterpreterOnly>false</polyglot.engine.WarnInterpreterOnly>
+                            <!-- 测试数据隔离到 target，避免改写开发者真实的 ~/EasyPostman 配置 -->
+                            <user.home>${project.build.directory}/test-home</user.home>
+                        </systemPropertyVariables>
+                    </configuration>
                 </plugin>
             </plugins>
         </pluginManagement>
